@@ -6,54 +6,67 @@ import plotly.express as px
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="OrgPulse Dashboard",
+    page_title="OrgPulse · Risk Intelligence",
     layout="wide"
 )
 
 # =========================
-# DESIGN (SAFE CSS)
+# CSS (CORRIGIDO E SEGURO)
 # =========================
 st.markdown("""
 <style>
-    html, body {
-        background-color: #0E1117;
-        color: #E6E6E6;
-        font-family: 'Segoe UI', sans-serif;
-    }
+html, body {
+    background-color: #0D0F14;
+    color: #E8EAF0;
+    font-family: sans-serif;
+}
 
-    /* KPI Cards */
-    .kpi-card {
-        background: #161A23;
-        padding: 1.2rem;
-        border-radius: 10px;
-        border: 1px solid #262B36;
-    }
+/* SIDEBAR */
+[data-testid="stSidebar"] {
+    background-color: #111318;
+    border-right: 1px solid #1E2130;
+}
 
-    .kpi-title {
-        font-size: 0.8rem;
-        color: #8A90A2;
-    }
+/* INPUTS */
+[data-testid="stSidebar"] * {
+    color: #E8EAF0 !important;
+}
 
-    .kpi-value {
-        font-size: 1.8rem;
-        font-weight: 600;
-        color: #FFFFFF;
-    }
+/* KPI CARDS */
+.kpi {
+    background: #111318;
+    border: 1px solid #1E2130;
+    border-radius: 10px;
+    padding: 16px;
+}
 
-    /* Sidebar */
-    section[data-testid="stSidebar"] {
-        background-color: #161A23;
-    }
+.kpi-title {
+    font-size: 12px;
+    color: #8B8FA8;
+}
 
-    /* Titles */
-    h1, h2, h3 {
-        font-weight: 600;
-    }
+.kpi-value {
+    font-size: 28px;
+    font-weight: bold;
+}
+
+/* TABLE FIX (CRÍTICO) */
+[data-testid="stDataFrame"] {
+    background-color: #111318 !important;
+}
+
+[data-testid="stDataFrame"] div {
+    color: #E8EAF0 !important;
+}
+
+/* TITLES */
+.section-title {
+    font-size: 18px;
+    margin-bottom: 10px;
+    font-weight: 600;
+}
 </style>
 """, unsafe_allow_html=True)
-
-st.title("OrgPulse — Psychosocial Risk Intelligence")
-st.caption("Análise de riscos psicossociais baseada no modelo HSE")
 
 # =========================
 # LOAD DATA
@@ -64,80 +77,105 @@ def load_data():
 
 df_base = load_data()
 
+COL_UNIDADE = "Informe sua unidade"
+COL_SETOR = "Informe seu setor / departamento."
+COL_CARGO = "Informe seu cargo"
+
 # =========================
 # SIDEBAR
 # =========================
-st.sidebar.header("Filtros")
+with st.sidebar:
+    st.markdown("### Filtros")
 
-empresa = st.sidebar.multiselect(
-    "Empresa",
-    df_base['Empresa'].unique(),
-    default=df_base['Empresa'].unique()
-)
+    empresa = st.multiselect(
+        "Empresa",
+        df_base['Empresa'].unique(),
+        default=df_base['Empresa'].unique()
+    )
 
-unidade = st.sidebar.multiselect(
-    "Unidade",
-    df_base['Informe sua unidade'].unique(),
-    default=df_base['Informe sua unidade'].unique()
-)
+    unidade = st.multiselect(
+        "Unidade",
+        df_base[COL_UNIDADE].unique(),
+        default=df_base[COL_UNIDADE].unique()
+    )
 
-setor = st.sidebar.multiselect(
-    "Setor",
-    df_base['Informe seu setor / departamento.'].unique(),
-    default=df_base['Informe seu setor / departamento.'].unique()
-)
+    setor = st.multiselect(
+        "Setor",
+        df_base[COL_SETOR].unique(),
+        default=df_base[COL_SETOR].unique()
+    )
 
+# =========================
+# FILTER
+# =========================
 df = df_base[
     (df_base['Empresa'].isin(empresa)) &
-    (df_base['Informe sua unidade'].isin(unidade)) &
-    (df_base['Informe seu setor / departamento.'].isin(setor))
+    (df_base[COL_UNIDADE].isin(unidade)) &
+    (df_base[COL_SETOR].isin(setor))
 ]
 
 # =========================
-# KPIs
+# HEADER
 # =========================
-col1, col2, col3, col4 = st.columns(4)
+st.title("OrgPulse · Psychosocial Risk Intelligence")
 
-def kpi(title, value):
-    return f"""
-    <div class="kpi-card">
-        <div class="kpi-title">{title}</div>
-        <div class="kpi-value">{value}</div>
+# =========================
+# KPIs (ESCALA CORRIGIDA)
+# =========================
+total = len(df)
+igrp = df['IGRP'].mean()
+
+pct_alto = (df['risco_geral'].isin(['Alto','Crítico']).mean()) * 100
+pct_crit = (df['risco_geral'] == 'Crítico').mean() * 100
+
+c1, c2, c3, c4 = st.columns(4)
+
+def cor_igrp(v):
+    if v < 2: return "#00C9A7"
+    elif v < 2.6: return "#FFB547"
+    else: return "#FF4D6A"
+
+with c1:
+    st.markdown(f"""
+    <div class="kpi">
+        <div class="kpi-title">Colaboradores</div>
+        <div class="kpi-value">{total}</div>
     </div>
-    """
+    """, unsafe_allow_html=True)
 
-col1.markdown(kpi("Colaboradores", len(df)), unsafe_allow_html=True)
-col2.markdown(kpi("IGRP Médio", round(df['IGRP'].mean(), 2)), unsafe_allow_html=True)
-col3.markdown(kpi(
-    "% Alto/Crítico",
-    f"{round((df['risco_geral'].isin(['Alto','Crítico']).mean())*100,1)}%"
-), unsafe_allow_html=True)
-col4.markdown(kpi(
-    "% Crítico",
-    f"{round((df['risco_geral'] == 'Crítico').mean()*100,1)}%"
-), unsafe_allow_html=True)
+with c2:
+    st.markdown(f"""
+    <div class="kpi">
+        <div class="kpi-title">IGRP Médio</div>
+        <div class="kpi-value" style="color:{cor_igrp(igrp)}">{round(igrp,2)}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c3:
+    st.markdown(f"""
+    <div class="kpi">
+        <div class="kpi-title">% Alto/Crítico</div>
+        <div class="kpi-value">{round(pct_alto,1)}%</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c4:
+    st.markdown(f"""
+    <div class="kpi">
+        <div class="kpi-title">% Crítico</div>
+        <div class="kpi-value">{round(pct_crit,1)}%</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
 # =========================
-# GRÁFICO PADRÃO (FUNÇÃO)
-# =========================
-def style_fig(fig):
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="#AAB0C0"),
-        margin=dict(l=0, r=0, t=20, b=0)
-    )
-    return fig
-
-# =========================
-# LINHA 2
+# ROW 1
 # =========================
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Distribuição de Risco")
+    st.markdown('<div class="section-title">Distribuição de Risco</div>', unsafe_allow_html=True)
 
     risco = df['risco_geral'].value_counts().reset_index()
     risco.columns = ['Risco', 'Qtd']
@@ -153,39 +191,32 @@ with col1:
             'Crítico': '#FF4D6A'
         }
     )
-
-    st.plotly_chart(style_fig(fig), use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    st.subheader("IGRP por Setor")
+    st.markdown('<div class="section-title">IGRP por Setor</div>', unsafe_allow_html=True)
 
-    setor_df = (
-        df.groupby('Informe seu setor / departamento.')
-        .agg({'IGRP': 'mean'})
-        .reset_index()
-        .sort_values('IGRP', ascending=False)
-    )
+    setor_df = df.groupby(COL_SETOR)['IGRP'].mean().reset_index()
 
     fig = px.bar(
-        setor_df.head(10),
+        setor_df.sort_values('IGRP').tail(10),
         x='IGRP',
-        y='Informe seu setor / departamento.',
+        y=COL_SETOR,
         orientation='h',
         color='IGRP',
-        color_continuous_scale=['#00C9A7', '#FFB547', '#FF4D6A']
+        color_continuous_scale='RdYlGn_r'
     )
-
-    st.plotly_chart(style_fig(fig), use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 st.divider()
 
 # =========================
-# LINHA 3
+# DIMENSÕES
 # =========================
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Score por Dimensão")
+    st.markdown('<div class="section-title">Dimensões</div>', unsafe_allow_html=True)
 
     heatmap = df[[
         'score_Demandas',
@@ -200,64 +231,52 @@ with col1:
     heatmap.columns = ['Dimensão', 'Score']
 
     fig = px.bar(
-        heatmap,
+        heatmap.sort_values('Score'),
         x='Score',
         y='Dimensão',
         orientation='h',
         color='Score',
-        color_continuous_scale=['#00C9A7', '#FFB547', '#FF4D6A']
+        color_continuous_scale='RdYlGn'
     )
 
-    st.plotly_chart(style_fig(fig), use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    st.subheader("Principais Problemas")
+    st.markdown('<div class="section-title">Principais Problemas</div>', unsafe_allow_html=True)
 
     problemas = heatmap.sort_values('Score').head(3)
 
     for _, row in problemas.iterrows():
-        st.markdown(
-            f"<div style='padding:10px;border-left:3px solid #FF4D6A;'>"
-            f"{row['Dimensão']} — {round(row['Score'],2)}</div>",
-            unsafe_allow_html=True
-        )
+        st.warning(f"{row['Dimensão']} → {round(row['Score'],2)}")
 
 st.divider()
 
 # =========================
-# LINHA 4
+# TABELAS
 # =========================
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Setores Críticos")
+    st.markdown('<div class="section-title">Setores Críticos</div>', unsafe_allow_html=True)
 
-    setor_risco = (
-        df.groupby('Informe seu setor / departamento.')
-        .agg({
-            'IGRP': 'mean',
-            'risco_geral': lambda x: (x.isin(['Alto','Crítico'])).mean()
-        })
-        .reset_index()
-    )
+    setor_risco = df.groupby(COL_SETOR).agg({
+        'IGRP':'mean',
+        'risco_geral': lambda x: (x.isin(['Alto','Crítico'])).mean()
+    }).reset_index()
 
-    setor_risco.columns = ['Setor', 'IGRP', '% Risco']
+    setor_risco.columns = ['Setor','IGRP','% Risco']
 
     st.dataframe(setor_risco.sort_values('IGRP', ascending=False).head(10), use_container_width=True)
 
 with col2:
-    st.subheader("Cargos Críticos")
+    st.markdown('<div class="section-title">Cargos Críticos</div>', unsafe_allow_html=True)
 
-    cargo_risco = (
-        df.groupby('Informe seu cargo')
-        .agg({
-            'IGRP': 'mean',
-            'risco_geral': lambda x: (x.isin(['Alto','Crítico'])).mean()
-        })
-        .reset_index()
-    )
+    cargo_risco = df.groupby(COL_CARGO).agg({
+        'IGRP':'mean',
+        'risco_geral': lambda x: (x.isin(['Alto','Crítico'])).mean()
+    }).reset_index()
 
-    cargo_risco.columns = ['Cargo', 'IGRP', '% Risco']
+    cargo_risco.columns = ['Cargo','IGRP','% Risco']
 
     st.dataframe(cargo_risco.sort_values('IGRP', ascending=False).head(10), use_container_width=True)
 
@@ -266,5 +285,5 @@ st.divider()
 # =========================
 # BASE
 # =========================
-st.subheader("Base Detalhada")
-st.dataframe(df, use_container_width=True)
+with st.expander("Base completa"):
+    st.dataframe(df, use_container_width=True)
