@@ -10,7 +10,7 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("(Index) OrgPulse - Psychosocial Risk Dashboard")
+st.title("OrgPulse - Psychosocial Risk Dashboard")
 st.caption("Análise de riscos psicossociais baseada no modelo HSE")
 
 # =========================
@@ -150,7 +150,7 @@ with col1:
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    st.subheader("🔥 Principais Problemas")
+    st.subheader("Principais Problemas")
 
     problemas = heatmap.sort_values('Score').head(3)
 
