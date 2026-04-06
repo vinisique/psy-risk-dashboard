@@ -275,35 +275,6 @@ def load_data(path_base, path_setor, path_cargo, path_unidade=None):
 # ─────────────────────────────────────────────
 # SIDEBAR — apenas filtros
 # ─────────────────────────────────────────────
-
-with st.sidebar:
-    st.markdown("### 📂 Fontes de dados")
-
-    # Caminhos locais no repositório (mesmo diretório do app.py)
-    _BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-    _PATH_BASE  = os.path.join(_BASE_DIR, "base.parquet")
-    _PATH_SETOR = os.path.join(_BASE_DIR, "setor.parquet")
-    _PATH_CARGO = os.path.join(_BASE_DIR, "cargo.parquet")
-    _PATH_UNID  = os.path.join(_BASE_DIR, "unidade.parquet")
-
-    arquivos_obrigatorios = [_PATH_BASE, _PATH_SETOR, _PATH_CARGO]
-    faltando = [p for p in arquivos_obrigatorios if not os.path.exists(p)]
-    
-    if faltando:
-        st.error("❌ Arquivos obrigatórios não encontrados:")
-        for f in faltando:
-            st.write(f"• {f}")
-        st.stop()
-    
-    base, setor, cargo, unidade = load_data(
-        _PATH_BASE,
-        _PATH_SETOR,
-        _PATH_CARGO,
-        _PATH_UNID if os.path.exists(_PATH_UNID) else None,
-    )
-    
-    st.success("✅ Dados carregados do repositório.")
-
     st.markdown("---")
     st.markdown("### 🔍 Filtros globais")
 
