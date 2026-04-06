@@ -8,10 +8,9 @@ import plotly.express as px
 st.set_page_config(
     page_title="OrgPulse Dashboard",
     layout="wide",
-    page_icon="📊"
 )
 
-st.title("📊 OrgPulse - Psychosocial Risk Dashboard")
+st.title("(Index) OrgPulse - Psychosocial Risk Dashboard")
 st.caption("Análise de riscos psicossociais baseada no modelo HSE")
 
 # =========================
