@@ -6,58 +6,43 @@ import plotly.express as px
 # CONFIG
 # =========================
 st.set_page_config(
-    page_title="Psychosocial Risk Analytics",
-    layout="wide"
+    page_title="OrgPulse Dashboard",
+    layout="wide",
+    page_icon="📊"
 )
 
-# =========================
-# THEME (SaaS)
-# =========================
-st.markdown("""
-    <style>
-        body {
-            background-color: #0e1117;
-            color: #e6e6e6;
-        }
-        .stMetric {
-            background-color: #1c1f26;
-            padding: 15px;
-            border-radius: 10px;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
-st.title("Psychosocial Risk Analytics")
-st.caption("Organizational risk intelligence platform")
+st.title("📊 OrgPulse - Psychosocial Risk Dashboard")
+st.caption("Análise de riscos psicossociais baseada no modelo HSE")
 
 # =========================
 # LOAD DATA
 # =========================
 @st.cache_data
 def load_data():
-    return pd.read_parquet("base.parquet")
+    df_base = pd.read_parquet("base.parquet")
+    return df_base
 
 df_base = load_data()
 
 # =========================
 # SIDEBAR
 # =========================
-st.sidebar.header("Filters")
+st.sidebar.header("Filtros")
 
 empresa = st.sidebar.multiselect(
-    "Company",
+    "Empresa",
     df_base['Empresa'].unique(),
     default=df_base['Empresa'].unique()
 )
 
 unidade = st.sidebar.multiselect(
-    "Unit",
+    "Unidade",
     df_base['Informe sua unidade'].unique(),
     default=df_base['Informe sua unidade'].unique()
 )
 
 setor = st.sidebar.multiselect(
-    "Department",
+    "Setor",
     df_base['Informe seu setor / departamento.'].unique(),
     default=df_base['Informe seu setor / departamento.'].unique()
 )
@@ -69,75 +54,50 @@ df = df_base[
 ]
 
 # =========================
-# KPIs
+# KPIs (LINHA HORIZONTAL)
 # =========================
 col1, col2, col3, col4 = st.columns(4)
 
-col1.metric("Employees", len(df))
-col2.metric("Average IGRP", round(df['IGRP'].mean(), 2))
+col1.metric("Colaboradores", len(df))
+col2.metric("IGRP Médio", round(df['IGRP'].mean(), 2))
 col3.metric(
-    "High Risk %",
+    "% Alto/Crítico",
     f"{round((df['risco_geral'].isin(['Alto','Crítico']).mean())*100,1)}%"
 )
 col4.metric(
-    "Critical %",
+    "% Crítico",
     f"{round((df['risco_geral'] == 'Crítico').mean()*100,1)}%"
 )
 
 st.divider()
 
 # =========================
-# BENCHMARK
-# =========================
-st.subheader("Benchmark by Company")
-
-benchmark = (
-    df_base.groupby('Empresa')['IGRP']
-    .mean()
-    .reset_index()
-    .sort_values('IGRP', ascending=False)
-)
-
-fig = px.bar(
-    benchmark,
-    x='IGRP',
-    y='Empresa',
-    orientation='h',
-    color='IGRP',
-    color_continuous_scale='RdYlGn_r'
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-st.divider()
-
-# =========================
-# DISTRIBUTION
+# LINHA 2 - VISÃO GERAL
 # =========================
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Risk Distribution")
+    st.subheader("Distribuição de Risco")
 
     risco = df['risco_geral'].value_counts().reset_index()
-    risco.columns = ['Risk', 'Count']
+    risco.columns = ['Risco', 'Qtd']
 
     fig = px.bar(
         risco,
-        x='Risk',
-        y='Count',
-        color='Risk',
+        x='Risco',
+        y='Qtd',
+        color='Risco',
         color_discrete_map={
-            'Normal': '#2ca02c',
-            'Alto': '#ff7f0e',
-            'Crítico': '#d62728'
+            'Normal': 'green',
+            'Alto': 'orange',
+            'Crítico': 'red'
         }
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
 with col2:
-    st.subheader("IGRP by Department")
+    st.subheader("IGRP por Setor")
 
     setor_df = (
         df.groupby('Informe seu setor / departamento.')
@@ -160,75 +120,93 @@ with col2:
 st.divider()
 
 # =========================
-# INSIGHTS AUTOMÁTICOS
+# LINHA 3 - DIAGNÓSTICO
 # =========================
-st.subheader("Automated Insights")
+col1, col2 = st.columns(2)
 
-insights = []
+with col1:
+    st.subheader("Heatmap de Dimensões")
 
-# Insight 1
-perc_critico = (df['risco_geral'] == 'Crítico').mean()
+    heatmap = df[[
+        'score_Demandas',
+        'score_Controle',
+        'score_Apoio_Chefia',
+        'score_Apoio_Colegas',
+        'score_Relacionamentos',
+        'score_Cargo',
+        'score_Comunicacao'
+    ]].mean().reset_index()
 
-if perc_critico > 0.15:
-    insights.append("High concentration of critical risk detected.")
-elif perc_critico > 0.05:
-    insights.append("Moderate presence of critical risk groups.")
+    heatmap.columns = ['Dimensão', 'Score']
 
-# Insight 2
-pior_dim = df[[
-    'score_Demandas',
-    'score_Controle',
-    'score_Apoio_Chefia',
-    'score_Apoio_Colegas',
-    'score_Relacionamentos',
-    'score_Cargo',
-    'score_Comunicacao'
-]].mean().idxmin()
+    fig = px.bar(
+        heatmap,
+        x='Score',
+        y='Dimensão',
+        orientation='h',
+        color='Score',
+        color_continuous_scale='RdYlGn'
+    )
 
-insights.append(f"Primary risk driver: {pior_dim.replace('score_', '')}")
+    st.plotly_chart(fig, use_container_width=True)
 
-# Insight 3
-top_setor = setor_df.iloc[0]['Informe seu setor / departamento.']
-insights.append(f"Highest risk department: {top_setor}")
+with col2:
+    st.subheader("🔥 Principais Problemas")
 
-# Render insights
-for i in insights:
-    st.write(f"- {i}")
+    problemas = heatmap.sort_values('Score').head(3)
+
+    for _, row in problemas.iterrows():
+        st.error(f"{row['Dimensão']} - Score: {round(row['Score'],2)}")
 
 st.divider()
 
 # =========================
-# HEATMAP
+# LINHA 4 - DETALHAMENTO
 # =========================
-st.subheader("Dimension Analysis")
+col1, col2 = st.columns(2)
 
-heatmap = df[[
-    'score_Demandas',
-    'score_Controle',
-    'score_Apoio_Chefia',
-    'score_Apoio_Colegas',
-    'score_Relacionamentos',
-    'score_Cargo',
-    'score_Comunicacao'
-]].mean().reset_index()
+with col1:
+    st.subheader("Setores Críticos")
 
-heatmap.columns = ['Dimension', 'Score']
+    setor_risco = (
+        df.groupby('Informe seu setor / departamento.')
+        .agg({
+            'IGRP': 'mean',
+            'risco_geral': lambda x: (x.isin(['Alto','Crítico'])).mean()
+        })
+        .reset_index()
+    )
 
-fig = px.bar(
-    heatmap,
-    x='Score',
-    y='Dimension',
-    orientation='h',
-    color='Score',
-    color_continuous_scale='RdYlGn'
-)
+    setor_risco.columns = ['Setor', 'IGRP', '% Risco']
 
-st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(
+        setor_risco.sort_values('IGRP', ascending=False).head(10),
+        use_container_width=True
+    )
+
+with col2:
+    st.subheader("Cargos Críticos")
+
+    cargo_risco = (
+        df.groupby('Informe seu cargo')
+        .agg({
+            'IGRP': 'mean',
+            'risco_geral': lambda x: (x.isin(['Alto','Crítico'])).mean()
+        })
+        .reset_index()
+    )
+
+    cargo_risco.columns = ['Cargo', 'IGRP', '% Risco']
+
+    st.dataframe(
+        cargo_risco.sort_values('IGRP', ascending=False).head(10),
+        use_container_width=True
+    )
 
 st.divider()
 
 # =========================
-# DATA TABLE
+# BASE DETALHADA
 # =========================
-st.subheader("Detailed Data")
+st.subheader("Base Detalhada")
 st.dataframe(df, use_container_width=True)
