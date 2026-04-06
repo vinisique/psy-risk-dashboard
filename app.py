@@ -503,20 +503,13 @@ with col1:
     st.markdown("<div class='section-label'>Detalhamento</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Top Setores de Risco</div>", unsafe_allow_html=True)
 
-    _s_igrp = df.groupby(COL_SETOR)["IGRP"].agg(["mean", "count"]).reset_index()
-    _s_igrp.columns = ["Setor", "IGRP", "N"]
-    _s_risco = (
-        df.assign(_em_risco=df["risco_geral"].isin(["Alto", "Crítico"]))
-        .groupby(COL_SETOR)["_em_risco"]
-        .mean()
-        .reset_index()
-        .rename(columns={COL_SETOR: "Setor", "_em_risco": "% em Risco"})
-    )
     setor_risco = (
-        _s_igrp.merge(_s_risco, on="Setor")
-        .sort_values("IGRP", ascending=False)
-        .head(10)
+        df.groupby(COL_SETOR)
+        .agg({"IGRP": "mean", "risco_geral": lambda x: (x.isin(["Alto","Crítico"])).mean()})
+        .reset_index()
     )
+    setor_risco.columns = ["Setor", "IGRP", "% em Risco"]
+    setor_risco = setor_risco.sort_values("IGRP", ascending=False).head(10).copy()
     setor_risco["IGRP"]       = setor_risco["IGRP"].round(2)
     setor_risco["% em Risco"] = (setor_risco["% em Risco"] * 100).round(1).astype(str) + "%"
 
@@ -535,20 +528,13 @@ with col2:
     st.markdown("<div class='section-label'>Detalhamento</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Top Cargos de Risco</div>", unsafe_allow_html=True)
 
-    _c_igrp = df.groupby(COL_CARGO)["IGRP"].agg(["mean", "count"]).reset_index()
-    _c_igrp.columns = ["Cargo", "IGRP", "N"]
-    _c_risco = (
-        df.assign(_em_risco=df["risco_geral"].isin(["Alto", "Crítico"]))
-        .groupby(COL_CARGO)["_em_risco"]
-        .mean()
-        .reset_index()
-        .rename(columns={COL_CARGO: "Cargo", "_em_risco": "% em Risco"})
-    )
     cargo_risco = (
-        _c_igrp.merge(_c_risco, on="Cargo")
-        .sort_values("IGRP", ascending=False)
-        .head(10)
+        df.groupby(COL_CARGO)
+        .agg({"IGRP": "mean", "risco_geral": lambda x: (x.isin(["Alto","Crítico"])).mean()})
+        .reset_index()
     )
+    cargo_risco.columns = ["Cargo", "IGRP", "% em Risco"]
+    cargo_risco = cargo_risco.sort_values("IGRP", ascending=False).head(10).copy()
     cargo_risco["IGRP"]       = cargo_risco["IGRP"].round(2)
     cargo_risco["% em Risco"] = (cargo_risco["% em Risco"] * 100).round(1).astype(str) + "%"
 
