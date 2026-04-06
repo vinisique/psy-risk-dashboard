@@ -321,6 +321,19 @@ base_f = base[
     base["Informe seu cargo"].isin(sel_cargo)
 ].copy()
 
+# ─────────────────────────────────────────────
+# CRIAR COLUNAS DE CLASSIFICAÇÃO POR DIMENSÃO
+# (necessário para a aba "Por Dimensão")
+# ─────────────────────────────────────────────
+for d in DIMENSOES:
+    col_score = f"score_{d}"
+    col_class = f"class_{d}"
+    
+    if col_score in base_f.columns and col_class not in base_f.columns:
+        base_f[col_class] = base_f[col_score].apply(
+            lambda x: score_para_classificacao(x, d) if pd.notna(x) else "Sem dados"
+        )
+
 def reaplicar_agg(df, col, rename):
     if df.empty: return pd.DataFrame()
     g = df.groupby(col).agg(
