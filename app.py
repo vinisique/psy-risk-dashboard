@@ -561,7 +561,7 @@ with tabs[1]:
         pivot = pivot.round(1)
 
         # Coloração sem matplotlib: aplicamos _perc_row_color em cada célula
-        styled = pivot.style.applymap(_perc_row_color).format("{:.1f}%")
+        styled = pivot.style.map(_perc_row_color).format("{:.1f}%")
         st.dataframe(styled, use_container_width=True, height=320)
 
 
@@ -1035,7 +1035,7 @@ with tabs[8]:
         # Coloração sem matplotlib
         styled = (
             df_pgr_show.style
-            .applymap(_nr_row_color, subset=all_num_cols)
+            .map(_nr_row_color, subset=all_num_cols)
             .format({c: "{:.2f}" for c in all_num_cols})
         )
 
