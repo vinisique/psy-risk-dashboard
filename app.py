@@ -68,7 +68,7 @@ NIVEIS_ORDEM = ["Baixo Risco", "Risco Médio", "Risco Moderado", "Alto Risco"]
 NIVEIS_GERAL_ORDEM = ["Aceitável", "Moderado", "Importante", "Crítico"]
 
 # ─────────────────────────────────────────────
-# CSS
+# CSS MELHORADO (substitua o bloco antigo)
 # ─────────────────────────────────────────────
 st.markdown(f"""
 <style>
@@ -79,14 +79,45 @@ html, body, [class*="css"] {{
     background-color: {COR_BG};
     color: {COR_TEXTO};
 }}
-.block-container {{ padding: 1.5rem 2rem 3rem; }}
+
+/* Sidebar - remove espaço vazio no topo + design mais bonito */
 [data-testid="stSidebar"] {{
     background-color: {COR_CARD} !important;
     border-right: 1px solid {COR_BORDA};
+    padding-top: 0 !important;
 }}
-[data-testid="stSidebar"] * {{ color: {COR_TEXTO} !important; }}
+[data-testid="stSidebar"] > div {{
+    padding-top: 0 !important;
+}}
+[data-testid="stSidebar"] * {{ 
+    color: {COR_TEXTO} !important; 
+}}
 
-/* Metric cards */
+/* Tabs - mais espaçadas e elegantes (resolve o problema de "espremido") */
+[data-baseweb="tab-list"] {{
+    background: {COR_CARD} !important;
+    border-radius: 12px;
+    padding: 8px !important;
+    gap: 8px !important;
+    margin-bottom: 10px;
+}}
+[data-baseweb="tab"] {{
+    background: transparent !important;
+    border-radius: 8px !important;
+    padding: 12px 24px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: {COR_MUTED} !important;
+    transition: all 0.2s;
+}}
+[aria-selected="true"][data-baseweb="tab"] {{
+    background: {COR_BG} !important;
+    color: {COR_TEXTO} !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}}
+
+/* Resto do CSS (mantido e ligeiramente melhorado) */
+.block-container {{ padding: 1.5rem 2rem 3rem; }}
 .kpi-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 2rem; }}
 .kpi-card {{
     background: {COR_CARD};
@@ -97,9 +128,6 @@ html, body, [class*="css"] {{
 .kpi-label {{ font-size: 11px; font-weight: 500; color: {COR_MUTED}; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }}
 .kpi-value {{ font-size: 28px; font-weight: 600; color: {COR_TEXTO}; line-height: 1; }}
 .kpi-sub {{ font-size: 12px; color: {COR_MUTED}; margin-top: 4px; }}
-.kpi-accent {{ color: {COR_ACCENT}; }}
-
-/* Section titles */
 .section-title {{
     font-size: 13px; font-weight: 600; color: {COR_MUTED};
     text-transform: uppercase; letter-spacing: .1em;
@@ -107,15 +135,6 @@ html, body, [class*="css"] {{
     padding-bottom: 8px;
     border-bottom: 1px solid {COR_BORDA};
 }}
-
-/* Risk badges */
-.badge {{ display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }}
-.badge-verde   {{ background: rgba(45,158,117,.18); color: {COR_VERDE}; }}
-.badge-amarelo {{ background: rgba(245,166,35,.18); color: {COR_AMARELO}; }}
-.badge-laranja {{ background: rgba(232,98,26,.18);  color: {COR_LARANJA}; }}
-.badge-vermelho{{ background: rgba(214,59,59,.18);  color: {COR_VERMELHO}; }}
-
-/* Page header */
 .page-header {{
     background: linear-gradient(135deg, #1A1D27 0%, #0F1117 100%);
     border: 1px solid {COR_BORDA};
@@ -126,19 +145,6 @@ html, body, [class*="css"] {{
     align-items: center;
     justify-content: space-between;
 }}
-.page-header h1 {{ font-size: 22px; font-weight: 600; margin: 0; color: {COR_TEXTO}; }}
-.page-header p  {{ font-size: 13px; color: {COR_MUTED}; margin: 4px 0 0; }}
-
-/* Tabs */
-[data-baseweb="tab-list"] {{ background: {COR_CARD} !important; border-radius: 10px; padding: 4px; gap: 2px; }}
-[data-baseweb="tab"] {{ background: transparent !important; border-radius: 8px !important; color: {COR_MUTED} !important; font-weight: 500 !important; }}
-[aria-selected="true"][data-baseweb="tab"] {{ background: {COR_BG} !important; color: {COR_TEXTO} !important; }}
-
-/* Plotly charts bg */
-.js-plotly-plot .plotly .bg {{ fill: transparent !important; }}
-
-/* Divider */
-.divider {{ border: none; border-top: 1px solid {COR_BORDA}; margin: 1.5rem 0; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -293,6 +299,16 @@ base, setor, cargo, unidade = load_data(
 # ─────────────────────────────────────────────
 
 with st.sidebar:
+    # Cabeçalho bonito no sidebar (remove o espaço vazio grande)
+    st.markdown("""
+        <div style="text-align:center; padding: 25px 0 15px 0; border-bottom: 1px solid #2A2D3E;">
+            <h2 style="margin:0; font-size:24px; color:#2D9E75;">🧠 HSE-IT</h2>
+            <p style="margin:4px 0 0 0; font-size:13px; color:#8B8FA8;">
+                Plataforma Vivamente 360° • NR-1
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown("---")
     st.markdown("### 🔍 Filtros globais")
 
