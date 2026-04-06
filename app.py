@@ -503,19 +503,21 @@ with col1:
     st.markdown("<div class='section-label'>Detalhamento</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Top Setores de Risco</div>", unsafe_allow_html=True)
 
-    setor_risco = (
-        df.groupby(COL_SETOR)
-        .agg(
-            IGRP=("IGRP", "mean"),
-            Risco=("risco_geral", lambda x: (x.isin(["Alto","Crítico"])).mean()),
-            N=("IGRP", "count"),
-        )
+    _s_igrp = df.groupby(COL_SETOR)["IGRP"].agg(["mean", "count"]).reset_index()
+    _s_igrp.columns = ["Setor", "IGRP", "N"]
+    _s_risco = (
+        df.assign(_em_risco=df["risco_geral"].isin(["Alto", "Crítico"]))
+        .groupby(COL_SETOR)["_em_risco"]
+        .mean()
         .reset_index()
-        .rename(columns={COL_SETOR: "Setor", "Risco": "% em Risco"})
+        .rename(columns={COL_SETOR: "Setor", "_em_risco": "% em Risco"})
+    )
+    setor_risco = (
+        _s_igrp.merge(_s_risco, on="Setor")
         .sort_values("IGRP", ascending=False)
         .head(10)
     )
-    setor_risco["IGRP"]      = setor_risco["IGRP"].round(2)
+    setor_risco["IGRP"]       = setor_risco["IGRP"].round(2)
     setor_risco["% em Risco"] = (setor_risco["% em Risco"] * 100).round(1).astype(str) + "%"
 
     st.dataframe(
@@ -533,15 +535,17 @@ with col2:
     st.markdown("<div class='section-label'>Detalhamento</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Top Cargos de Risco</div>", unsafe_allow_html=True)
 
-    cargo_risco = (
-        df.groupby(COL_CARGO)
-        .agg(
-            IGRP=("IGRP", "mean"),
-            Risco=("risco_geral", lambda x: (x.isin(["Alto","Crítico"])).mean()),
-            N=("IGRP", "count"),
-        )
+    _c_igrp = df.groupby(COL_CARGO)["IGRP"].agg(["mean", "count"]).reset_index()
+    _c_igrp.columns = ["Cargo", "IGRP", "N"]
+    _c_risco = (
+        df.assign(_em_risco=df["risco_geral"].isin(["Alto", "Crítico"]))
+        .groupby(COL_CARGO)["_em_risco"]
+        .mean()
         .reset_index()
-        .rename(columns={COL_CARGO: "Cargo", "Risco": "% em Risco"})
+        .rename(columns={COL_CARGO: "Cargo", "_em_risco": "% em Risco"})
+    )
+    cargo_risco = (
+        _c_igrp.merge(_c_risco, on="Cargo")
         .sort_values("IGRP", ascending=False)
         .head(10)
     )
