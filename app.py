@@ -250,27 +250,43 @@ def load_data(path_base, path_setor, path_cargo, path_unidade=None):
     cargo    = pd.read_parquet(path_cargo)
     unidade  = pd.read_parquet(path_unidade) if path_unidade and os.path.exists(path_unidade) else None
     return base, setor, cargo, unidade
-    
 
-    def agg_grupo(df, col, rename):
-        g = df.groupby(col).agg(
-            n_colaboradores=(col, "count"),
-            IGRP=("IGRP", "mean"),
-            NR_geral=("NR_geral", "mean"),
-            **{f"score_{d}": (f"score_{d}", "mean") for d in DIMENSOES},
-            **{f"NR_{d}": (f"NR_{d}", "mean") for d in DIMENSOES},
-            perc_critico=("risco_geral", lambda x: (x == "Crítico").mean()),
-            perc_importante=("risco_geral", lambda x: (x == "Importante").mean()),
-            perc_risco_alto=("risco_geral", lambda x: x.isin(["Crítico", "Importante"]).mean()),
-        ).reset_index().rename(columns={col: rename})
-        g["classificacao"] = g["NR_geral"].apply(classificar_NR)
-        g["rank_risco"] = g["NR_geral"].rank(ascending=False, method="min")
-        return g.sort_values(["perc_risco_alto", "NR_geral"], ascending=False)
 
-    setor    = agg_grupo(base, "Informe seu setor / departamento.", "Setor")
-    cargo    = agg_grupo(base, "Informe seu cargo", "Cargo")
-    unidade  = agg_grupo(base, "Informe sua unidade", "Unidade")
-    return base, setor, cargo, unidade
+def agg_grupo(df, col, rename):
+    g = df.groupby(col).agg(
+        n_colaboradores=(col, "count"),
+        IGRP=("IGRP", "mean"),
+        NR_geral=("NR_geral", "mean"),
+        **{f"score_{d}": (f"score_{d}", "mean") for d in DIMENSOES if f"score_{d}" in df.columns},
+        **{f"NR_{d}": (f"NR_{d}", "mean") for d in DIMENSOES if f"NR_{d}" in df.columns},
+        perc_critico=("risco_geral", lambda x: (x == "Crítico").mean()),
+        perc_importante=("risco_geral", lambda x: (x == "Importante").mean()),
+        perc_risco_alto=("risco_geral", lambda x: x.isin(["Crítico", "Importante"]).mean()),
+    ).reset_index().rename(columns={col: rename})
+
+    g["classificacao"] = g["NR_geral"].apply(classificar_NR)
+    g["rank_risco"] = g["NR_geral"].rank(ascending=False, method="min")
+    return g.sort_values(["perc_risco_alto", "NR_geral"], ascending=False)
+
+# ─────────────────────────────────────────────
+# CAMINHOS DOS DADOS (REPOSITÓRIO)
+# ─────────────────────────────────────────────
+
+BASE_PATH = "base.parquet"
+SETOR_PATH = "setor.parquet"
+CARGO_PATH = "cargo.parquet"
+UNIDADE_PATH = "unidade.parquet"
+
+# ─────────────────────────────────────────────
+# LOAD
+# ─────────────────────────────────────────────
+
+base, setor, cargo, unidade = load_data(
+    BASE_PATH,
+    SETOR_PATH,
+    CARGO_PATH,
+    UNIDADE_PATH
+)
 
 # ─────────────────────────────────────────────
 # SIDEBAR — apenas filtros
