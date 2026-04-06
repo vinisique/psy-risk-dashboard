@@ -291,6 +291,8 @@ base, setor, cargo, unidade = load_data(
 # ─────────────────────────────────────────────
 # SIDEBAR — apenas filtros
 # ─────────────────────────────────────────────
+
+with st.sidebar:
     st.markdown("---")
     st.markdown("### 🔍 Filtros globais")
 
