@@ -885,7 +885,10 @@ with tabs[6]:
                 title="NR", tickvals=[1,4,8,12,16],
                 ticktext=["1","4","8","12","16"],
                 tickfont=dict(color=COR_TEXTO, size=11),
-                titlefont=dict(color=COR_TEXTO),
+                title=dict(
+                    text="NR",
+                    font=dict(color=COR_TEXTO)
+                ),
                 bgcolor="rgba(0,0,0,0)",
                 bordercolor=COR_BORDA,
             ),
@@ -1065,7 +1068,10 @@ with tabs[8]:
                 tickvals=[2, 6, 10, 14],
                 ticktext=["Aceitável", "Moderado", "Importante", "Crítico"],
                 tickfont=dict(color=COR_TEXTO, size=10),
-                titlefont=dict(color=COR_TEXTO),
+                title=dict(
+                    text="NR",
+                    font=dict(color=COR_TEXTO)
+                ),
                 bgcolor="rgba(0,0,0,0)",
                 bordercolor=COR_BORDA,
             ),
