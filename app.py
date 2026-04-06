@@ -209,6 +209,36 @@ def score_para_classificacao(score: float, dim: str) -> str:
         if score <= 3.0: return "Risco Médio"
         return "Baixo Risco"
 
+
+def _nr_row_color(val):
+    """Retorna estilo CSS para células NR — sem dependência de matplotlib."""
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return ""
+    if v >= 13:
+        return f"background-color: rgba(214,59,59,0.35); color: {COR_TEXTO}"
+    if v >= 9:
+        return f"background-color: rgba(232,98,26,0.30); color: {COR_TEXTO}"
+    if v >= 5:
+        return f"background-color: rgba(245,166,35,0.25); color: {COR_TEXTO}"
+    return f"background-color: rgba(45,158,117,0.20); color: {COR_TEXTO}"
+
+
+def _perc_row_color(val):
+    """Coloração para células de percentual (0–100) — sem matplotlib."""
+    try:
+        v = float(str(val).replace("%", ""))
+    except (TypeError, ValueError):
+        return ""
+    if v >= 60:
+        return f"background-color: rgba(214,59,59,0.30); color: {COR_TEXTO}"
+    if v >= 35:
+        return f"background-color: rgba(232,98,26,0.25); color: {COR_TEXTO}"
+    if v >= 15:
+        return f"background-color: rgba(245,166,35,0.20); color: {COR_TEXTO}"
+    return f"background-color: rgba(45,158,117,0.15); color: {COR_TEXTO}"
+
 # ─────────────────────────────────────────────
 # CARGA DE DADOS
 # ─────────────────────────────────────────────
@@ -241,7 +271,6 @@ def demo_data():
         cols_class[f"P_{d}"]     = np.random.randint(1, 5, n)
         cols_class[f"S_{d}"]     = np.random.randint(1, 5, n)
 
-    # 35 questões
     cols_q = {f"Q{i}": np.random.randint(0, 5, n) for i in range(1, 36)}
 
     base = pd.DataFrame({
@@ -280,36 +309,34 @@ def demo_data():
     return base, setor, cargo, unidade
 
 # ─────────────────────────────────────────────
-# SIDEBAR — upload / filtros
+# SIDEBAR — apenas filtros
 # ─────────────────────────────────────────────
 
 with st.sidebar:
     st.markdown("### 📂 Fontes de dados")
-    up_base     = st.file_uploader("base.parquet",     type="parquet", key="base")
-    up_setor    = st.file_uploader("setor.parquet",    type="parquet", key="setor")
-    up_cargo    = st.file_uploader("cargo.parquet",    type="parquet", key="cargo")
-    up_unidade  = st.file_uploader("unidade.parquet",  type="parquet", key="unid")
 
-    st.markdown("---")
+    # Caminhos locais no repositório (mesmo diretório do app.py)
+    _BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
+    _PATH_BASE  = os.path.join(_BASE_DIR, "base.parquet")
+    _PATH_SETOR = os.path.join(_BASE_DIR, "setor.parquet")
+    _PATH_CARGO = os.path.join(_BASE_DIR, "cargo.parquet")
+    _PATH_UNID  = os.path.join(_BASE_DIR, "unidade.parquet")
 
-    # Carregar dados
-    if up_base and up_setor and up_cargo:
-        import tempfile, shutil
-        def save_tmp(f):
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet")
-            shutil.copyfileobj(f, tmp); tmp.flush()
-            return tmp.name
-        p_base   = save_tmp(up_base)
-        p_setor  = save_tmp(up_setor)
-        p_cargo  = save_tmp(up_cargo)
-        p_unid   = save_tmp(up_unidade) if up_unidade else None
-        base, setor, cargo, unidade = load_data(p_base, p_setor, p_cargo, p_unid)
+    _todos_existem = all(os.path.exists(p) for p in [_PATH_BASE, _PATH_SETOR, _PATH_CARGO])
+
+    if _todos_existem:
+        base, setor, cargo, unidade = load_data(
+            _PATH_BASE, _PATH_SETOR, _PATH_CARGO,
+            _PATH_UNID if os.path.exists(_PATH_UNID) else None,
+        )
         usando_demo = False
+        st.success("✅ Dados carregados do repositório.")
     else:
         base, setor, cargo, unidade = demo_data()
         usando_demo = True
-        st.info("📊 Exibindo dados de demonstração.\nFaça upload dos parquets para usar dados reais.")
+        st.info("📊 Parquets não encontrados.\nExibindo dados de demonstração.")
 
+    st.markdown("---")
     st.markdown("### 🔍 Filtros globais")
 
     empresas_disp = sorted(base["Empresa"].dropna().unique())
@@ -337,7 +364,6 @@ base_f = base[
     base["Informe seu cargo"].isin(sel_cargo)
 ].copy()
 
-# Reagregar setor/cargo/unidade sobre base filtrada
 def reaplicar_agg(df, col, rename):
     if df.empty: return pd.DataFrame()
     g = df.groupby(col).agg(
@@ -378,7 +404,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# KPIs
 st.markdown(f"""
 <div class="kpi-grid">
   <div class="kpi-card">
@@ -426,11 +451,10 @@ tabs = st.tabs([
 ])
 
 # ══════════════════════════════════════════════
-# TAB 1 — VISÃO GERAL  (slides 14 + 15)
+# TAB 1 — VISÃO GERAL
 # ══════════════════════════════════════════════
 with tabs[0]:
 
-    # ── Slide 14: IGRP por dimensão ──
     st.markdown('<div class="section-title">Slide 14 · Índice Geral de Riscos Psicossociais (IGRP) por Dimensão</div>', unsafe_allow_html=True)
 
     scores_dim = {}
@@ -465,7 +489,6 @@ with tabs[0]:
     plotly_layout(fig_igrp, height=360)
     st.plotly_chart(fig_igrp, use_container_width=True)
 
-    # Legenda de cores
     cols_leg = st.columns(4)
     for i, (nivel, cor) in enumerate([("Baixo Risco", COR_VERDE), ("Risco Médio", COR_AMARELO),
                                        ("Risco Moderado", COR_LARANJA), ("Alto Risco", COR_VERMELHO)]):
@@ -476,7 +499,6 @@ with tabs[0]:
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
-    # ── Slide 15: % trabalhadores por nível de risco ──
     st.markdown('<div class="section-title">Slide 15 · % de Trabalhadores por Nível de Risco Global</div>', unsafe_allow_html=True)
 
     col_pizza, col_barra = st.columns([1, 1])
@@ -506,7 +528,6 @@ with tabs[0]:
         st.plotly_chart(fig_pizza, use_container_width=True)
 
     with col_barra:
-        # Barras absolutas
         fig_abs = go.Figure()
         for nivel in ordem:
             cnt = dist_risco.get(nivel, 0)
@@ -531,7 +552,7 @@ with tabs[0]:
 
 
 # ══════════════════════════════════════════════
-# TAB 2 — POR DIMENSÃO  (slide 16)
+# TAB 2 — POR DIMENSÃO
 # ══════════════════════════════════════════════
 with tabs[1]:
     st.markdown('<div class="section-title">Slide 16 · Distribuição de Nível de Risco por Dimensão do HSE-IT</div>', unsafe_allow_html=True)
@@ -576,30 +597,25 @@ with tabs[1]:
         plotly_layout(fig_stack, height=420)
         st.plotly_chart(fig_stack, use_container_width=True)
 
-    # Tabela detalhada
     st.markdown('<div class="section-title">Tabela detalhada por dimensão</div>', unsafe_allow_html=True)
     if not df_dim.empty:
         pivot = df_dim.pivot_table(index="Dimensão", columns="Nível", values="Perc", fill_value=0)
         pivot = pivot.reindex(columns=[c for c in NIVEIS_ORDEM if c in pivot.columns])
         pivot = pivot.round(1)
-        st.dataframe(
-            pivot.style
-                .background_gradient(cmap="RdYlGn_r", axis=1)
-                .format("{:.1f}%"),
-            use_container_width=True, height=320,
-        )
+
+        # Coloração sem matplotlib: aplicamos _perc_row_color em cada célula
+        styled = pivot.style.applymap(_perc_row_color).format("{:.1f}%")
+        st.dataframe(styled, use_container_width=True, height=320)
 
 
 # ══════════════════════════════════════════════
-# TAB 3 — POR QUESTÃO  (slide 17)
+# TAB 3 — POR QUESTÃO
 # ══════════════════════════════════════════════
 with tabs[2]:
     st.markdown('<div class="section-title">Slide 17 · Distribuição de Respostas por Questão do HSE-IT</div>', unsafe_allow_html=True)
 
-    # Detectar colunas de questão (Q1..Q35 ou texto longo)
     col_q_detect = [c for c in base_f.columns if c.startswith("Q") and c[1:].isdigit()]
     if not col_q_detect:
-        # Tenta detectar por exclusão das colunas conhecidas
         known = {"Empresa","Informe sua unidade","Informe seu setor / departamento.","Informe seu cargo",
                  "IGRP","NR_geral","risco_geral","qtd_dimensoes_alto"}
         col_q_detect = [c for c in base_f.columns
@@ -611,7 +627,6 @@ with tabs[2]:
                         and not c.startswith("S_")]
 
     if col_q_detect:
-        # Mapeia Q1..Q35 → dimensão
         dim_por_q = {}
         mapa_dim = {
             "Demandas": [1,2,3,4,5,6,7,8],
@@ -626,7 +641,6 @@ with tabs[2]:
             for q in qs:
                 dim_por_q[q] = d
 
-        # Filtro de dimensão
         sel_dim_q = st.selectbox("Filtrar por dimensão", ["Todas"] + [DIMENSOES_LABEL[d] for d in DIMENSOES])
 
         rows_q = []
@@ -649,8 +663,6 @@ with tabs[2]:
 
         if sel_dim_q != "Todas":
             df_q = df_q[df_q["Dimensão"] == sel_dim_q]
-
-        questoes_filtradas = df_q["Q"].unique().tolist()
 
         COR_RESPOSTAS = ["#4F8EF7","#2D9E75","#F5A623","#E8621A","#D63B3B"]
 
@@ -676,7 +688,6 @@ with tabs[2]:
         plotly_layout(fig_q, height=420, margin=dict(l=20, r=20, t=50, b=60))
         st.plotly_chart(fig_q, use_container_width=True)
 
-        # Score médio por questão
         st.markdown('<div class="section-title">Score médio por questão (0–4)</div>', unsafe_allow_html=True)
         scores_q = []
         for i, col in enumerate(col_q_detect[:35], start=1):
@@ -709,7 +720,7 @@ with tabs[2]:
 
 
 # ══════════════════════════════════════════════
-# TAB 4 — SCORE DE CLIMA  (slide 18)
+# TAB 4 — SCORE DE CLIMA
 # ══════════════════════════════════════════════
 with tabs[3]:
     st.markdown('<div class="section-title">Slide 18 · Score de Clima Psicossocial — Top Rankings por Criticidade</div>', unsafe_allow_html=True)
@@ -740,25 +751,23 @@ with tabs[3]:
         ranking_chart(empresa_f, "Empresa", f"Top {top_n} Empresas por NR")
     with c2:
         ranking_chart(cargo_f, "Cargo", f"Top {top_n} Cargos por NR")
-        if not unidade_f.empty:
+        if unidade_f is not None and not unidade_f.empty:
             ranking_chart(unidade_f, "Unidade", f"Top {top_n} Unidades por NR")
 
-    # Tabela consolidada
     st.markdown('<div class="section-title">Tabela consolidada de rankings</div>', unsafe_allow_html=True)
 
     tabs_rank = st.tabs(["Por Setor", "Por Cargo", "Por Unidade", "Por Empresa"])
     for tab_r, df_r, col_r in zip(tabs_rank,
-                                    [setor_f, cargo_f, unidade_f, empresa_f],
+                                    [setor_f, cargo_f, unidade_f if unidade_f is not None else pd.DataFrame(), empresa_f],
                                     ["Setor", "Cargo", "Unidade", "Empresa"]):
         with tab_r:
-            if df_r.empty:
+            if df_r is None or df_r.empty:
                 st.info("Sem dados disponíveis.")
                 continue
             cols_show = [col_r, "n_colaboradores", "NR_geral", "IGRP",
                          "perc_risco_alto", "perc_critico", "classificacao"]
             cols_show = [c for c in cols_show if c in df_r.columns]
-            df_show = df_r[cols_show].copy()
-            df_show = df_show.rename(columns={
+            df_show = df_r[cols_show].copy().rename(columns={
                 "n_colaboradores": "N", "NR_geral": "NR Geral", "IGRP": "IGRP",
                 "perc_risco_alto": "% Alto/Crítico", "perc_critico": "% Crítico",
                 "classificacao": "Classificação"
@@ -774,7 +783,7 @@ with tabs[3]:
 
 
 # ══════════════════════════════════════════════
-# TAB 5 — RISCO DE SAÚDE  (slide 19)
+# TAB 5 — RISCO DE SAÚDE
 # ══════════════════════════════════════════════
 with tabs[4]:
     st.markdown('<div class="section-title">Slide 19 · Risco de Impacto na Saúde — Severidade por Setor e Cargo</div>', unsafe_allow_html=True)
@@ -812,21 +821,15 @@ with tabs[4]:
 
 
 # ══════════════════════════════════════════════
-# TAB 6 — IMPACTO ORG.  (slide 20)
+# TAB 6 — IMPACTO ORG.
 # ══════════════════════════════════════════════
 with tabs[5]:
     st.markdown('<div class="section-title">Slide 20 · Impacto Organizacional Relacionado ao Risco</div>', unsafe_allow_html=True)
 
-    # Gráfico 1: Top 5 setores NR alto → absenteísmo esperado (coluna empilhada)
     st.markdown("##### Top setores por NR alto — Risco de Absenteísmo (colunas empilhadas por nível)")
 
     if not setor_f.empty:
         top_abs = setor_f.nlargest(top_n, "NR_geral")
-        perc_cols = {"Crítico": "perc_critico", "Importante": "perc_importante"}
-        perc_mod  = top_abs.apply(
-            lambda r: max(0, r["perc_risco_alto"] - r["perc_critico"] - r["perc_importante"]) if "perc_risco_alto" in r else 0,
-            axis=1
-        )
 
         fig_abs = go.Figure()
         for nivel, col_p, cor_n in [
@@ -854,12 +857,9 @@ with tabs[5]:
         st.plotly_chart(fig_abs, use_container_width=True)
 
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-    # Gráfico 2: Top 5 setores maior P×S → adoecimento (barra horizontal)
     st.markdown("##### Top setores por maior P e S combinados — Probabilidade de Adoecimento (barra horizontal)")
 
     if not setor_f.empty:
-        # Calcula score composto de P×S para cada setor somando NR de todas as dimensões
         cols_nr_dim = [f"NR_{d}" for d in DIMENSOES if f"NR_{d}" in setor_f.columns]
         if cols_nr_dim:
             setor_ps = setor_f.copy()
@@ -890,7 +890,7 @@ with tabs[5]:
 
 
 # ══════════════════════════════════════════════
-# TAB 7 — HEATMAP  (slide 21)
+# TAB 7 — HEATMAP
 # ══════════════════════════════════════════════
 with tabs[6]:
     st.markdown('<div class="section-title">Slide 21 · Heatmap — Nível de Risco (NR) por Dimensão</div>', unsafe_allow_html=True)
@@ -905,12 +905,9 @@ with tabs[6]:
         cols_nr_hm = [f"NR_{d}" for d in DIMENSOES if f"NR_{d}" in df_hm_src.columns]
         labels_hm  = [DIMENSOES_LABEL[d] for d in DIMENSOES if f"NR_{d}" in df_hm_src.columns]
 
-        # Limitar a top 20 para legibilidade
         df_hm = df_hm_src.nlargest(min(20, len(df_hm_src)), "NR_geral")
         z_hm  = df_hm[cols_nr_hm].values
         y_hm  = df_hm[col_grupo_hm].tolist()
-
-        # Texto anotado
         annot = [[f"{val:.1f}" for val in row] for row in z_hm]
 
         fig_hm = go.Figure(go.Heatmap(
@@ -947,7 +944,7 @@ with tabs[6]:
 
 
 # ══════════════════════════════════════════════
-# TAB 8 — POR CARGO  (slide 22)
+# TAB 8 — POR CARGO
 # ══════════════════════════════════════════════
 with tabs[7]:
     st.markdown('<div class="section-title">Slide 22 · Análise Detalhada por Cargo</div>', unsafe_allow_html=True)
@@ -958,7 +955,6 @@ with tabs[7]:
 
         row_cargo = cargo_f[cargo_f["Cargo"] == cargo_sel].iloc[0]
 
-        # KPIs do cargo
         st.markdown(f"""
         <div class="kpi-grid">
           <div class="kpi-card">
@@ -980,7 +976,6 @@ with tabs[7]:
         </div>
         """, unsafe_allow_html=True)
 
-        # Radar por dimensão
         scores_cargo = []
         labels_radar = []
         for d in DIMENSOES:
@@ -1011,7 +1006,6 @@ with tabs[7]:
             plotly_layout(fig_radar, height=380)
             st.plotly_chart(fig_radar, use_container_width=True)
 
-        # Tabela NR por dimensão
         st.markdown('<div class="section-title">NR por Dimensão</div>', unsafe_allow_html=True)
         tab_dim_cargo = []
         for d in DIMENSOES:
@@ -1024,7 +1018,6 @@ with tabs[7]:
         df_dim_cargo = pd.DataFrame(tab_dim_cargo)
         st.dataframe(df_dim_cargo, use_container_width=True, hide_index=True)
 
-        # Scores individuais filtrados por cargo
         base_cargo = base_f[base_f["Informe seu cargo"] == cargo_sel]
         st.markdown(f'<div class="section-title">Distribuição individual ({len(base_cargo)} respondentes)</div>', unsafe_allow_html=True)
 
@@ -1049,14 +1042,18 @@ with tabs[7]:
 
 
 # ══════════════════════════════════════════════
-# TAB 9 — PGR  (slide 23)
+# TAB 9 — PGR
 # ══════════════════════════════════════════════
 with tabs[8]:
     st.markdown('<div class="section-title">Slide 23 · PGR — Programa de Gerenciamento de Riscos</div>', unsafe_allow_html=True)
     st.caption("Análise por Unidade / Setor / Cargo × Categorias — Matriz NR (P × S)")
 
     visao_pgr = st.radio("Dimensão de análise:", ["Setor", "Cargo", "Unidade"], horizontal=True, key="pgr_visao")
-    mapa_pgr  = {"Setor": (setor_f, "Setor"), "Cargo": (cargo_f, "Cargo"), "Unidade": (unidade_f, "Unidade")}
+    mapa_pgr  = {
+        "Setor":   (setor_f,   "Setor"),
+        "Cargo":   (cargo_f,   "Cargo"),
+        "Unidade": (unidade_f if unidade_f is not None else pd.DataFrame(), "Unidade"),
+    }
     df_pgr_src, col_pgr = mapa_pgr[visao_pgr]
 
     if df_pgr_src is not None and not df_pgr_src.empty:
@@ -1066,30 +1063,19 @@ with tabs[8]:
         df_pgr = df_pgr_src[[col_pgr, "n_colaboradores", "NR_geral", "classificacao"] + cols_nr_pgr].copy()
         df_pgr = df_pgr.sort_values("NR_geral", ascending=False).reset_index(drop=True)
 
-        # Renomear colunas NR_ para labels legíveis
         rename_map = {f"NR_{d}": DIMENSOES_LABEL[d] for d in DIMENSOES if f"NR_{d}" in df_pgr.columns}
         df_pgr_show = df_pgr.rename(columns={**rename_map,
                                               "n_colaboradores": "N",
                                               "NR_geral": "NR Geral",
                                               "classificacao": "Classificação"})
 
-        # Coloração condicional das células NR
         nr_cols = list(rename_map.values())
         all_num_cols = ["NR Geral"] + nr_cols
 
-        def color_nr(val):
-            try:
-                v = float(val)
-            except:
-                return ""
-            if v >= 13: return f"background-color: rgba(214,59,59,0.35); color:{COR_TEXTO}"
-            if v >= 9:  return f"background-color: rgba(232,98,26,0.3); color:{COR_TEXTO}"
-            if v >= 5:  return f"background-color: rgba(245,166,35,0.25); color:{COR_TEXTO}"
-            return f"background-color: rgba(45,158,117,0.2); color:{COR_TEXTO}"
-
+        # Coloração sem matplotlib
         styled = (
             df_pgr_show.style
-            .applymap(color_nr, subset=all_num_cols)
+            .applymap(_nr_row_color, subset=all_num_cols)
             .format({c: "{:.2f}" for c in all_num_cols})
         )
 
@@ -1097,19 +1083,11 @@ with tabs[8]:
                      height=min(600, (len(df_pgr_show)+1) * 38))
 
         st.markdown('<hr class="divider">', unsafe_allow_html=True)
-
-        # Matriz visual NR (heatmap PGR)
         st.markdown("##### Matriz de Risco — Heatmap PGR")
 
         z_pgr = df_pgr[cols_nr_pgr].values
         y_pgr = df_pgr[col_pgr].tolist()
         annot_pgr = [[f"{v:.1f}" for v in row] for row in z_pgr]
-
-        def nr_para_nivel(v):
-            if v >= 13: return "Crítico"
-            if v >= 9:  return "Importante"
-            if v >= 5:  return "Moderado"
-            return "Aceitável"
 
         fig_pgr = go.Figure(go.Heatmap(
             z=z_pgr,
@@ -1142,7 +1120,6 @@ with tabs[8]:
         plotly_layout(fig_pgr, height=max(400, len(y_pgr) * 30 + 80))
         st.plotly_chart(fig_pgr, use_container_width=True)
 
-        # Legenda NR
         st.markdown(f"""
         <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:{COR_MUTED};margin-top:8px;">
           <span><b style="color:{COR_VERDE}">■</b> Aceitável (NR 1–4)</span>
@@ -1152,7 +1129,7 @@ with tabs[8]:
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info(f"Dados de {visao_pgr} não disponíveis. Gere o {visao_pgr.lower()}.parquet conforme instruções.")
+        st.info(f"Dados de {visao_pgr} não disponíveis.")
 
 # ─────────────────────────────────────────────
 # FOOTER
