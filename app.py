@@ -250,43 +250,7 @@ def load_data(path_base, path_setor, path_cargo, path_unidade=None):
     cargo    = pd.read_parquet(path_cargo)
     unidade  = pd.read_parquet(path_unidade) if path_unidade and os.path.exists(path_unidade) else None
     return base, setor, cargo, unidade
-
-
-def demo_data():
-    """Gera dados sintéticos para demonstração quando parquets não encontrados."""
-    np.random.seed(42)
-    n = 300
-    empresas  = ["Empresa A", "Empresa B"]
-    unidades  = ["Unidade SP", "Unidade RJ", "Unidade BH"]
-    setores   = ["RH", "TI", "Operações", "Financeiro", "Comercial", "Logística", "Jurídico"]
-    cargos    = ["Analista", "Gerente", "Coordenador", "Assistente", "Técnico", "Supervisor"]
-    riscos_g  = ["Aceitável", "Moderado", "Importante", "Crítico"]
-    niveis_d  = ["Baixo Risco", "Risco Médio", "Risco Moderado", "Alto Risco"]
-
-    cols_score = {f"score_{d}": np.random.uniform(0, 4, n) for d in DIMENSOES}
-    cols_NR    = {f"NR_{d}": np.random.randint(1, 17, n) for d in DIMENSOES}
-    cols_class = {}
-    for d in DIMENSOES:
-        cols_class[f"class_{d}"] = np.random.choice(niveis_d, n, p=[.3, .3, .25, .15])
-        cols_class[f"P_{d}"]     = np.random.randint(1, 5, n)
-        cols_class[f"S_{d}"]     = np.random.randint(1, 5, n)
-
-    cols_q = {f"Q{i}": np.random.randint(0, 5, n) for i in range(1, 36)}
-
-    base = pd.DataFrame({
-        "Empresa": np.random.choice(empresas, n),
-        "Informe sua unidade": np.random.choice(unidades, n),
-        "Informe seu setor / departamento.": np.random.choice(setores, n),
-        "Informe seu cargo": np.random.choice(cargos, n),
-        **cols_q,
-        **cols_score,
-        **cols_NR,
-        "IGRP": np.random.uniform(0.5, 3.5, n),
-        "NR_geral": np.random.uniform(1, 16, n),
-        "risco_geral": np.random.choice(riscos_g, n, p=[.25, .35, .25, .15]),
-        "qtd_dimensoes_alto": np.random.randint(0, 8, n),
-        **cols_class,
-    })
+    
 
     def agg_grupo(df, col, rename):
         g = df.groupby(col).agg(
@@ -322,19 +286,23 @@ with st.sidebar:
     _PATH_CARGO = os.path.join(_BASE_DIR, "cargo.parquet")
     _PATH_UNID  = os.path.join(_BASE_DIR, "unidade.parquet")
 
-    _todos_existem = all(os.path.exists(p) for p in [_PATH_BASE, _PATH_SETOR, _PATH_CARGO])
-
-    if _todos_existem:
-        base, setor, cargo, unidade = load_data(
-            _PATH_BASE, _PATH_SETOR, _PATH_CARGO,
-            _PATH_UNID if os.path.exists(_PATH_UNID) else None,
-        )
-        usando_demo = False
-        st.success("✅ Dados carregados do repositório.")
-    else:
-        base, setor, cargo, unidade = demo_data()
-        usando_demo = True
-        st.info("📊 Parquets não encontrados.\nExibindo dados de demonstração.")
+    arquivos_obrigatorios = [_PATH_BASE, _PATH_SETOR, _PATH_CARGO]
+    faltando = [p for p in arquivos_obrigatorios if not os.path.exists(p)]
+    
+    if faltando:
+        st.error("❌ Arquivos obrigatórios não encontrados:")
+        for f in faltando:
+            st.write(f"• {f}")
+        st.stop()
+    
+    base, setor, cargo, unidade = load_data(
+        _PATH_BASE,
+        _PATH_SETOR,
+        _PATH_CARGO,
+        _PATH_UNID if os.path.exists(_PATH_UNID) else None,
+    )
+    
+    st.success("✅ Dados carregados do repositório.")
 
     st.markdown("---")
     st.markdown("### 🔍 Filtros globais")
@@ -399,7 +367,7 @@ st.markdown(f"""
 <div class="page-header">
   <div>
     <h1>🧠 Dashboard HSE-IT · Riscos Psicossociais</h1>
-    <p>Plataforma Vivamente 360° — NR-1 · {n_total} respondentes no filtro atual{"  |  ⚠️ Dados demo" if usando_demo else ""}</p>
+    <p>Plataforma Vivamente 360° — NR-1 · {n_total} respondentes no filtro atual</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
