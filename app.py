@@ -495,6 +495,18 @@ with col2:
 st.markdown("<hr class='custom-divider'>", unsafe_allow_html=True)
 
 # =========================
+# DIAGNÓSTICO — colunas disponíveis
+# =========================
+with st.expander("🔍 DEBUG — Colunas do DataFrame (remova após diagnóstico)", expanded=True):
+    st.write("**Colunas disponíveis no df:**")
+    st.write(list(df.columns))
+    st.write(f"**COL_SETOR esperado:** `{COL_SETOR}`")
+    st.write(f"**COL_CARGO esperado:** `{COL_CARGO}`")
+    st.write(f"**Linhas no df:** {len(df)}")
+    st.write("**Primeiras linhas:**")
+    st.dataframe(df.head(3), use_container_width=True)
+
+# =========================
 # ROW 4 — TABLES
 # =========================
 col1, col2 = st.columns(2, gap="large")
@@ -503,51 +515,57 @@ with col1:
     st.markdown("<div class='section-label'>Detalhamento</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Top Setores de Risco</div>", unsafe_allow_html=True)
 
-    setor_risco = (
-        df.groupby(COL_SETOR)
-        .agg({"IGRP": "mean", "risco_geral": lambda x: (x.isin(["Alto","Crítico"])).mean()})
-        .reset_index()
-    )
-    setor_risco.columns = ["Setor", "IGRP", "% em Risco"]
-    setor_risco = setor_risco.sort_values("IGRP", ascending=False).head(10).copy()
-    setor_risco["IGRP"]       = setor_risco["IGRP"].round(2)
-    setor_risco["% em Risco"] = (setor_risco["% em Risco"] * 100).round(1).astype(str) + "%"
+    try:
+        setor_risco = (
+            df.groupby(COL_SETOR)
+            .agg({"IGRP": "mean", "risco_geral": lambda x: (x.isin(["Alto","Crítico"])).mean()})
+            .reset_index()
+        )
+        setor_risco.columns = ["Setor", "IGRP", "% em Risco"]
+        setor_risco = setor_risco.sort_values("IGRP", ascending=False).head(10).copy()
+        setor_risco["IGRP"]       = setor_risco["IGRP"].round(2)
+        setor_risco["% em Risco"] = (setor_risco["% em Risco"] * 100).round(1).astype(str) + "%"
 
-    st.dataframe(
-        setor_risco,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "IGRP": st.column_config.ProgressColumn(
-                "IGRP", min_value=0, max_value=100, format="%.2f"
-            )
-        }
-    )
+        st.dataframe(
+            setor_risco,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "IGRP": st.column_config.ProgressColumn(
+                    "IGRP", min_value=0, max_value=100, format="%.2f"
+                )
+            }
+        )
+    except Exception as e:
+        st.error(f"❌ ERRO em Top Setores: `{type(e).__name__}: {e}`")
 
 with col2:
     st.markdown("<div class='section-label'>Detalhamento</div>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Top Cargos de Risco</div>", unsafe_allow_html=True)
 
-    cargo_risco = (
-        df.groupby(COL_CARGO)
-        .agg({"IGRP": "mean", "risco_geral": lambda x: (x.isin(["Alto","Crítico"])).mean()})
-        .reset_index()
-    )
-    cargo_risco.columns = ["Cargo", "IGRP", "% em Risco"]
-    cargo_risco = cargo_risco.sort_values("IGRP", ascending=False).head(10).copy()
-    cargo_risco["IGRP"]       = cargo_risco["IGRP"].round(2)
-    cargo_risco["% em Risco"] = (cargo_risco["% em Risco"] * 100).round(1).astype(str) + "%"
+    try:
+        cargo_risco = (
+            df.groupby(COL_CARGO)
+            .agg({"IGRP": "mean", "risco_geral": lambda x: (x.isin(["Alto","Crítico"])).mean()})
+            .reset_index()
+        )
+        cargo_risco.columns = ["Cargo", "IGRP", "% em Risco"]
+        cargo_risco = cargo_risco.sort_values("IGRP", ascending=False).head(10).copy()
+        cargo_risco["IGRP"]       = cargo_risco["IGRP"].round(2)
+        cargo_risco["% em Risco"] = (cargo_risco["% em Risco"] * 100).round(1).astype(str) + "%"
 
-    st.dataframe(
-        cargo_risco,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "IGRP": st.column_config.ProgressColumn(
-                "IGRP", min_value=0, max_value=100, format="%.2f"
-            )
-        }
-    )
+        st.dataframe(
+            cargo_risco,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "IGRP": st.column_config.ProgressColumn(
+                    "IGRP", min_value=0, max_value=100, format="%.2f"
+                )
+            }
+        )
+    except Exception as e:
+        st.error(f"❌ ERRO em Top Cargos: `{type(e).__name__}: {e}`")
 
 st.markdown("<hr class='custom-divider'>", unsafe_allow_html=True)
 
@@ -555,16 +573,24 @@ st.markdown("<hr class='custom-divider'>", unsafe_allow_html=True)
 # DETAILED BASE (COLLAPSED)
 # =========================
 with st.expander("📋  Base de dados completa", expanded=False):
-    display_cols = {
-        "Empresa": "Empresa",
-        COL_UNIDADE: "Unidade",
-        COL_SETOR:   "Setor",
-        COL_CARGO:   "Cargo",
-        "IGRP":      "IGRP",
-        "risco_geral": "Risco Geral",
-    }
-    st.dataframe(
-        df[list(display_cols.keys())].rename(columns=display_cols),
-        use_container_width=True,
-        hide_index=True,
-    )
+    try:
+        display_cols = {
+            "Empresa":     "Empresa",
+            COL_UNIDADE:   "Unidade",
+            COL_SETOR:     "Setor",
+            COL_CARGO:     "Cargo",
+            "IGRP":        "IGRP",
+            "risco_geral": "Risco Geral",
+        }
+        # filtra só colunas que realmente existem
+        existing = {k: v for k, v in display_cols.items() if k in df.columns}
+        missing  = [k for k in display_cols if k not in df.columns]
+        if missing:
+            st.warning(f"⚠️ Colunas ausentes no parquet: `{missing}`")
+        st.dataframe(
+            df[list(existing.keys())].rename(columns=existing),
+            use_container_width=True,
+            hide_index=True,
+        )
+    except Exception as e:
+        st.error(f"❌ ERRO na Base Detalhada: `{type(e).__name__}: {e}`")
