@@ -882,7 +882,7 @@ with tabs[6]:
             ],
             zmin=1, zmax=16,
             colorbar=dict(
-                title="NR", tickvals=[1,4,8,12,16],
+                tickvals=[1,4,8,12,16],
                 ticktext=["1","4","8","12","16"],
                 tickfont=dict(color=COR_TEXTO, size=11),
                 title=dict(
