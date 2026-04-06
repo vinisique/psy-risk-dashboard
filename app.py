@@ -1064,7 +1064,6 @@ with tabs[8]:
             ],
             zmin=1, zmax=16,
             colorbar=dict(
-                title="NR",
                 tickvals=[2, 6, 10, 14],
                 ticktext=["Aceitável", "Moderado", "Importante", "Crítico"],
                 tickfont=dict(color=COR_TEXTO, size=10),
