@@ -280,36 +280,8 @@ def demo_data():
     return base, setor, cargo, unidade
 
 # ─────────────────────────────────────────────
-# SIDEBAR — upload / filtros
+# SIDEBAR — filtros
 # ─────────────────────────────────────────────
-
-with st.sidebar:
-    st.markdown("### 📂 Fontes de dados")
-    up_base     = st.file_uploader("base.parquet",     type="parquet", key="base")
-    up_setor    = st.file_uploader("setor.parquet",    type="parquet", key="setor")
-    up_cargo    = st.file_uploader("cargo.parquet",    type="parquet", key="cargo")
-    up_unidade  = st.file_uploader("unidade.parquet",  type="parquet", key="unid")
-
-    st.markdown("---")
-
-    # Carregar dados
-    if up_base and up_setor and up_cargo:
-        import tempfile, shutil
-        def save_tmp(f):
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".parquet")
-            shutil.copyfileobj(f, tmp); tmp.flush()
-            return tmp.name
-        p_base   = save_tmp(up_base)
-        p_setor  = save_tmp(up_setor)
-        p_cargo  = save_tmp(up_cargo)
-        p_unid   = save_tmp(up_unidade) if up_unidade else None
-        base, setor, cargo, unidade = load_data(p_base, p_setor, p_cargo, p_unid)
-        usando_demo = False
-    else:
-        base, setor, cargo, unidade = demo_data()
-        usando_demo = True
-        st.info("📊 Exibindo dados de demonstração.\nFaça upload dos parquets para usar dados reais.")
-
     st.markdown("### 🔍 Filtros globais")
 
     empresas_disp = sorted(base["Empresa"].dropna().unique())
