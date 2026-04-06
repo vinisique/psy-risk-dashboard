@@ -153,7 +153,7 @@ with col1:
 with col2:
     st.subheader("🔥 Principais Problemas")
 
-    problemas = heatmap.sort_values('Score').head(5)
+    problemas = heatmap.sort_values('Score').head(3)
 
     for _, row in problemas.iterrows():
         st.error(f"{row['Dimensão']} - Score: {round(row['Score'],2)}")
