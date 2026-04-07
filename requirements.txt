@@ -4,3 +4,5 @@ plotly
 numpy
 matplotlib
 pyarrow
+requests>=2.31.0
+ 
