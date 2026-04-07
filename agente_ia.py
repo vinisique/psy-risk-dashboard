@@ -23,6 +23,15 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
+# CHAVE API — lida do secrets (nunca exposta ao usuário)
+# ─────────────────────────────────────────────
+try:
+    GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+except KeyError:
+    st.error("⚠️ Chave GROQ_API_KEY não encontrada em .streamlit/secrets.toml")
+    st.stop()
+
+# ─────────────────────────────────────────────
 # PALETA (mantida igual ao dashboard principal)
 # ─────────────────────────────────────────────
 COR_VERDE    = "#2D9E75"
@@ -387,19 +396,6 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # API Key  ← texto atualizado para Groq
-    st.markdown("### 🔑 API Key")
-    api_key = st.text_input(
-        "Chave Groq",
-        type="password",
-        placeholder="gsk_...",
-        help="Crie uma chave gratuita em console.groq.com — sem cartão de crédito."
-    )
-    if not api_key:
-        st.info("💡 [Obter chave grátis →](https://console.groq.com/keys)")
-
-    st.markdown("---")
-
     # Filtros de contexto
     st.markdown("### 🔍 Contexto da análise")
     
@@ -531,8 +527,8 @@ if typed_input and send_btn:
 # PROCESSAR MENSAGEM
 # ─────────────────────────────────────────────
 if user_input and user_input.strip():
-    if not api_key:
-        st.error("⚠️ Configure sua chave API Groq na barra lateral para usar o agente.")
+    if not GROQ_API_KEY:
+        st.error("⚠️ GROQ_API_KEY não configurada no secrets.toml.")
         st.stop()
 
     st.session_state.chat_history.append({
@@ -564,7 +560,7 @@ Responda às perguntas do usuário com base nesses dados. Seja específico, cite
     # Chamar API Groq  ← função atualizada
     with st.spinner("🧠 Analisando dados..."):
         try:
-            resposta = call_groq(api_messages, api_key)
+            resposta = call_groq(api_messages, GROQ_API_KEY)
             
             st.session_state.chat_history.append({
                 "role": "assistant",
