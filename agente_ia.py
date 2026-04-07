@@ -1,7 +1,7 @@
 """
 🧠 Agente de IA — HSE-IT · Vivamente 360°
 Analisa os dados de riscos psicossociais e gera insights acionáveis.
-Tecnologia: Anthropic API (claude-sonnet-4-20250514) + Streamlit
+Tecnologia: Groq API (llama-3.3-70b-versatile) + Streamlit
 """
 
 import streamlit as st
@@ -335,31 +335,41 @@ Você pode responder em português brasileiro. Quando listar ações, seja espec
 """
 
 
-def call_anthropic(messages: list, api_key: str) -> str:
-    """Chama a API da Anthropic com streaming simulado."""
+# ─────────────────────────────────────────────
+# CHAMADA À API GROQ  ← ÚNICO BLOCO ALTERADO
+# ─────────────────────────────────────────────
+def call_groq(messages: list, api_key: str) -> str:
+    """Chama a API da Groq (compatível com OpenAI Chat Completions)."""
+
+    # A Groq não tem campo "system" separado — o system prompt vai
+    # como primeira mensagem com role="system" dentro do array messages.
+    groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
+
     headers = {
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
     }
     payload = {
-        "model": "claude-opus-4-5",
+        "model": "llama-3.3-70b-versatile",   # modelo recomendado na Groq
         "max_tokens": 2048,
-        "system": SYSTEM_PROMPT,
-        "messages": messages,
+        "messages": groq_messages,
+        "temperature": 0.7,
     }
     resp = requests.post(
-        "https://api.anthropic.com/v1/messages",
+        "https://api.groq.com/openai/v1/chat/completions",
         headers=headers,
         json=payload,
         timeout=60,
     )
     if resp.status_code != 200:
-        error_detail = resp.json().get("error", {}).get("message", resp.text)
-        raise Exception(f"Erro API ({resp.status_code}): {error_detail}")
-    
+        try:
+            error_detail = resp.json().get("error", {}).get("message", resp.text)
+        except Exception:
+            error_detail = resp.text
+        raise Exception(f"Erro API Groq ({resp.status_code}): {error_detail}")
+
     data = resp.json()
-    return data["content"][0]["text"]
+    return data["choices"][0]["message"]["content"]
 
 
 # ─────────────────────────────────────────────
@@ -377,16 +387,16 @@ with st.sidebar:
 
     st.markdown("---")
     
-    # API Key
+    # API Key  ← texto atualizado para Groq
     st.markdown("### 🔑 API Key")
     api_key = st.text_input(
-        "Chave Anthropic",
+        "Chave Groq",
         type="password",
-        placeholder="sk-ant-...",
-        help="Crie uma chave gratuita em console.anthropic.com — novos usuários recebem créditos grátis."
+        placeholder="gsk_...",
+        help="Crie uma chave gratuita em console.groq.com — sem cartão de crédito."
     )
     if not api_key:
-        st.info("💡 [Obter chave grátis →](https://console.anthropic.com)")
+        st.info("💡 [Obter chave grátis →](https://console.groq.com/keys)")
 
     st.markdown("---")
 
@@ -412,7 +422,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"""
     <div style="font-size:11px; color:{COR_MUTED}; line-height:1.6;">
-        <b>Modelo:</b> Claude Opus 4.5<br>
+        <b>Modelo:</b> Llama 3.3 70B (Groq)<br>
         <b>Dados:</b> {len(base)} respondentes<br>
         <b>Instrumento:</b> HSE-IT (NR-1)
     </div>
@@ -483,13 +493,9 @@ with chat_container:
         if msg["role"] == "user":
             st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
         else:
-            # Formatar resposta do agente
             content = msg["content"]
-            # Converter markdown básico para HTML
             content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
-            # Bold
             content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
-            # Italic
             content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
             st.markdown(f'<div class="msg-agent">🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>{content_html}</div>', 
                        unsafe_allow_html=True)
@@ -499,7 +505,6 @@ with chat_container:
 # ─────────────────────────────────────────────
 st.markdown("---")
 
-# Processar quick question selecionada
 if hasattr(st.session_state, "selected_quick"):
     user_input = st.session_state.selected_quick
     del st.session_state.selected_quick
@@ -527,20 +532,16 @@ if typed_input and send_btn:
 # ─────────────────────────────────────────────
 if user_input and user_input.strip():
     if not api_key:
-        st.error("⚠️ Configure sua chave API Anthropic na barra lateral para usar o agente.")
+        st.error("⚠️ Configure sua chave API Groq na barra lateral para usar o agente.")
         st.stop()
 
-    # Adicionar mensagem do usuário
     st.session_state.chat_history.append({
         "role": "user",
         "content": user_input.strip()
     })
 
-    # Montar messages para a API
-    # Primeiro turno: injetar contexto dos dados
     api_messages = []
     
-    # Injetar contexto como primeira mensagem do usuário (context window)
     context_message = f"""Você tem acesso ao seguinte contexto de dados do dashboard HSE-IT:
 
 {contexto_atual}
@@ -548,10 +549,8 @@ if user_input and user_input.strip():
 ---
 Responda às perguntas do usuário com base nesses dados. Seja específico, cite números, e gere insights acionáveis."""
 
-    # Reconstruir histórico para a API
     for i, msg in enumerate(st.session_state.chat_history):
         if i == 0:
-            # Primeira mensagem: injetar contexto + pergunta do usuário
             api_messages.append({
                 "role": "user",
                 "content": f"{context_message}\n\nPrimeira pergunta do usuário: {msg['content']}"
@@ -562,10 +561,10 @@ Responda às perguntas do usuário com base nesses dados. Seja específico, cite
                 "content": msg["content"]
             })
 
-    # Chamar API com indicador de progresso
+    # Chamar API Groq  ← função atualizada
     with st.spinner("🧠 Analisando dados..."):
         try:
-            resposta = call_anthropic(api_messages, api_key)
+            resposta = call_groq(api_messages, api_key)
             
             st.session_state.chat_history.append({
                 "role": "assistant",
@@ -575,7 +574,6 @@ Responda às perguntas do usuário com base nesses dados. Seja específico, cite
             
         except Exception as e:
             st.error(f"❌ Erro ao consultar o agente: {str(e)}")
-            # Remover a mensagem do usuário que falhou
             st.session_state.chat_history.pop()
 
 # ─────────────────────────────────────────────
@@ -606,7 +604,6 @@ if not st.session_state.chat_history and stats:
     with col2:
         st.markdown("**Scores por dimensão** (0–4)")
         for dim_label, score in scores.items():
-            # Identificar se é dimensão negativa
             is_neg = dim_label in ["Demandas", "Relacionamentos"]
             if is_neg:
                 cor = COR_VERMELHO if score >= 3 else COR_AMARELO if score >= 2 else COR_VERDE
@@ -620,7 +617,6 @@ if not st.session_state.chat_history and stats:
             </div>
             """, unsafe_allow_html=True)
 
-    # Top setores
     top_s = stats.get("top_setores_criticos", [])
     if top_s:
         st.markdown(f'<div class="section-title">🔥 Setores mais críticos (por NR)</div>', unsafe_allow_html=True)
@@ -643,7 +639,7 @@ st.markdown(f"""
 <div style="margin-top:2rem; padding-top:1rem; border-top:1px solid {COR_BORDA};
      display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
   <span style="font-size:11px; color:{COR_MUTED};">
-    🤖 Agente HSE-IT · Powered by Claude · Vivamente 360°
+    🤖 Agente HSE-IT · Powered by Groq + Llama 3.3 · Vivamente 360°
   </span>
   <span style="font-size:11px; color:{COR_MUTED}; font-family:'DM Mono', monospace;">
     {datetime.now().strftime("%d/%m/%Y")} · {n_f} respondentes no contexto
