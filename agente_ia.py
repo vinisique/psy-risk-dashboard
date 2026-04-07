@@ -321,29 +321,126 @@ Escalas de Referência:
     return contexto, stats
 
 
-SYSTEM_PROMPT = """Você é um especialista sênior em Saúde Mental Ocupacional, Psicologia Organizacional e Gestão de Riscos Psicossociais (NR-1 brasileira). Você analisa dados do instrumento HSE-IT (Health & Safety Executive Indicator Tool adaptado).
+SYSTEM_PROMPT = """Você é o Especialista em Planos de Ação HSE-IT — um agente que gera exclusivamente planos de ação estruturados para riscos psicossociais (NR-1).
 
-Seu papel é interpretar dados quantitativos de riscos psicossociais e transformá-los em insights humanos, estratégicos e acionáveis — não apenas descrever números.
+REGRAS OBRIGATÓRIAS (nunca quebre):
+- Você deve responder APENAS com um JSON válido, nada mais, nada menos.
+- Nunca adicione texto explicativo, introdução, conclusão ou qualquer coisa fora do JSON.
+- Use exatamente o schema abaixo.
+- Os campos devem ser claros, específicos e realistas para o contexto brasileiro de SST/RH.
+- Prioridade: "Alta", "Média" ou "Baixa".
+- Prazo: formato legível (ex: "Próximos 15 dias", "Até 30/06/2026", "90 dias").
+- Indicador de sucesso: deve ser mensurável (número, %, taxa, score, etc.).
 
-Você SEMPRE:
-- Contextualiza o que cada número significa na prática (impacto humano e organizacional)
-- Identifica padrões, correlações e situações que merecem atenção imediata
-- Sugere ações concretas, priorizadas e realistas para gestores de RH e HSE
-- Usa linguagem clara, direta e empática
-- Cita os dados específicos ao fazer afirmações
-- Estrutura bem as respostas com seções quando pertinente
-- Faz perguntas reflexivas quando útil para aprofundar a análise
+SCHEMA OBRIGATÓRIO:
+{
+  "problema": "descrição curta e clara do problema principal identificado nos dados",
+  "objetivo": "objetivo SMART do plano (o que queremos alcançar)",
+  "acoes": [
+    {
+      "descricao": "descrição clara e acionável da ação",
+      "responsavel": "quem executa (ex: Gestor de RH, Liderança da área, Equipe HSE, etc.)",
+      "prazo": "prazo específico",
+      "prioridade": "Alta | Média | Baixa",
+      "indicador_sucesso": "métrica mensurável de sucesso"
+    }
+  ]
+}
 
-Você NUNCA:
-- Inventa dados não presentes no contexto
-- Usa jargões desnecessários sem explicação
-- Dá respostas genéricas sem ancoragem nos dados reais
-- Ignora o aspecto humano — por trás de cada número há pessoas
+Abaixo estão 4 exemplos de saída CORRETA (use-os como padrão exato de estrutura e tom):
+{
+  "problema": "Demandas excessivas (score médio 3.41/4) e NR geral elevado (12.8) nos setores de Operações e Atendimento",
+  "objetivo": "Reduzir o score de Demandas em pelo menos 1,0 ponto e o NR geral para abaixo de 9,0 em 90 dias",
+  "acoes": [
+    {
+      "descricao": "Realizar mapeamento de carga horária e redistribuição de tarefas nas equipes com sobrecarga",
+      "responsavel": "Gestores de Operações e RH",
+      "prazo": "Próximos 30 dias",
+      "prioridade": "Alta",
+      "indicador_sucesso": "Redução de 25% no número de colaboradores reportando sobrecarga (reavaliação HSE-IT)"
+    },
+    {
+      "descricao": "Implantar pausas ativas padronizadas (10 min a cada 2h) com monitoramento via checklist",
+      "responsavel": "Equipe HSE + Liderança direta",
+      "prazo": "15 dias",
+      "prioridade": "Alta",
+      "indicador_sucesso": "Adesão ≥ 85% das equipes (relatório mensal)"
+    }
+  ]
+}
+{
+  "problema": "Baixo Controle (score 1.2/4) e alto risco crítico (28%) no cargo de Analista Administrativo",
+  "objetivo": "Aumentar o score de Controle para ≥ 2.8 e reduzir o percentual de risco crítico para < 10%",
+  "acoes": [
+    {
+      "descricao": "Revisar e ampliar autonomia decisória em processos rotineiros (ex: aprovação de pequenos valores)",
+      "responsavel": "Gestores diretos + RH",
+      "prazo": "45 dias",
+      "prioridade": "Alta",
+      "indicador_sucesso": "Aumento de 1,5 ponto no score de Controle na próxima medição"
+    }
+  ]
+}
+{
+  "problema": "Relacionamentos com score 3.05/4 e suporte da chefia baixo (1.8/4) na unidade São Paulo",
+  "objetivo": "Melhorar o clima de relacionamento e apoio hierárquico, reduzindo o NR médio em 3 pontos",
+  "acoes": [
+    {
+      "descricao": "Realizar workshops de comunicação não-violenta e feedback construtivo para todas as chefias",
+      "responsavel": "RH + Consultoria externa especializada",
+      "prazo": "Próximos 60 dias",
+      "prioridade": "Média",
+      "indicador_sucesso": "Melhoria de ≥ 0.8 ponto nos scores de Relacionamentos e Apoio_Chefia"
+    },
+    {
+      "descricao": "Implantar canal anônimo de escuta mensal (pesquisa rápida + ação em 48h)",
+      "responsavel": "Equipe HSE",
+      "prazo": "Imediato",
+      "prioridade": "Alta",
+      "indicador_sucesso": "Taxa de participação ≥ 70% e resolução de 80% das demandas levantadas"
+    }
+  ]
+}
+{
+  "problema": "Mudança organizacional mal comunicada gerando alto risco em Comunicação e Mudanças (score 1.4/4)",
+  "objetivo": "Garantir clareza e engajamento durante o processo de mudança, zerando o risco crítico relacionado à comunicação",
+  "acoes": [
+    {
+      "descricao": "Criar e executar plano de comunicação em cascata com town halls semanais e FAQ atualizado",
+      "responsavel": "Diretoria + Comunicação Interna",
+      "prazo": "Próximos 90 dias",
+      "prioridade": "Alta",
+      "indicador_sucesso": "Score de Mudanca ≥ 3.0 e redução de 50% nas menções negativas sobre mudança"
+    }
+  ]
+}
 
-Você pode responder em português brasileiro. Quando listar ações, seja específico: quem faz, o quê, quando.
+Agora, usando o contexto de dados HSE-IT fornecido pelo usuário, gere o plano de ação no formato JSON exatamente como nos exemplos.
 """
 
+def validate_and_fix_plan(raw_response: str, max_retries=3) -> dict:
+    for attempt in range(max_retries):
+        try:
+            json_str = re.search(r'\{.*\}', raw_response, re.DOTALL).group(0)
+            plan = json.loads(json_str)
 
+            required = ["problema", "objetivo", "acoes"]
+            if not all(k in plan for k in required):
+                raise ValueError("Campos obrigatórios ausentes")
+
+            for acao in plan["acoes"]:
+                if not all(k in acao for k in ["descricao", "responsavel", "prazo", "prioridade", "indicador_sucesso"]):
+                    raise ValueError("Ação incompleta")
+
+            return plan
+        except Exception:
+            continue
+
+    return {
+        "problema": "Erro na geração",
+        "objetivo": "Corrigir output",
+        "acoes": []
+    }
 # ─────────────────────────────────────────────
 # CHAMADA À API GROQ  ← ÚNICO BLOCO ALTERADO
 # ─────────────────────────────────────────────
@@ -362,7 +459,8 @@ def call_groq(messages: list, api_key: str) -> str:
         "model": "llama-3.3-70b-versatile",   # modelo recomendado na Groq
         "max_tokens": 2048,
         "messages": groq_messages,
-        "temperature": 0.7,
+        "temperature": 0.2,
+        "response_format": {"type": "json_object"}
     }
     resp = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
@@ -490,11 +588,39 @@ with chat_container:
             st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
         else:
             content = msg["content"]
-            content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
-            content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
-            content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
-            st.markdown(f'<div class="msg-agent">🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>{content_html}</div>', 
-                       unsafe_allow_html=True)
+        
+            # 👇 Se for plano estruturado
+            if isinstance(content, dict):
+                st.markdown('<div class="msg-agent">🤖 <strong style="color:#A78BFA;">Agente HSE-IT</strong><br><br>', unsafe_allow_html=True)
+                
+                st.markdown("### 🎯 Plano de Ação")
+                st.markdown(f"**Problema:** {content['problema']}")
+                st.markdown(f"**Objetivo:** {content['objetivo']}")
+        
+                for acao in content["acoes"]:
+                    st.markdown(f"""
+                    - **{acao['descricao']}**
+                      - Responsável: {acao['responsavel']}
+                      - Prazo: {acao['prazo']}
+                      - Prioridade: {acao['prioridade']}
+                      - Indicador: {acao['indicador_sucesso']}
+                    """)
+        
+                st.markdown("</div>", unsafe_allow_html=True)
+        
+            # 👇 fallback (texto normal)
+            else:
+                content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
+                content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
+                content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
+        
+                st.markdown(f'''
+                <div class="msg-agent">
+                🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
+                {content_html}
+                </div>
+                ''', unsafe_allow_html=True)
+                
 
 # ─────────────────────────────────────────────
 # INPUT DO USUÁRIO
@@ -560,14 +686,20 @@ Responda às perguntas do usuário com base nesses dados. Seja específico, cite
     # Chamar API Groq  ← função atualizada
     with st.spinner("🧠 Analisando dados..."):
         try:
-            resposta = call_groq(api_messages, GROQ_API_KEY)
+            raw_resposta = call_groq(api_messages, GROQ_API_KEY)
             
+            plan = validate_and_fix_plan(raw_resposta)
+    
+            # 👉 AQUI entra o bloco que você perguntou
+
+            # salva no histórico (em JSON formatado)
             st.session_state.chat_history.append({
                 "role": "assistant",
-                "content": resposta
+                "content": plan
             })
+    
             st.rerun()
-            
+    
         except Exception as e:
             st.error(f"❌ Erro ao consultar o agente: {str(e)}")
             st.session_state.chat_history.pop()
