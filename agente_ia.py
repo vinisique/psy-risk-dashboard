@@ -193,10 +193,13 @@ Agora, com base no contexto completo do dashboard HSE-IT fornecido (que inclui a
 # ─────────────────────────────────────────────
 # FUNÇÕES
 # ─────────────────────────────────────────────
-def validate_and_fix_plan(raw_response: str, max_retries: int = 3) -> dict:
-    for _ in range(max_retries):
+def validate_and_fix_plan(raw_response: str, messages: list, api_key: str, max_retries: int = 3) -> dict:
+    """Valida o JSON retornado pelo agente. Se inválido, chama a API novamente
+    com uma instrução de correção até max_retries tentativas."""
+    current_raw = raw_response
+    for attempt in range(max_retries):
         try:
-            json_str = re.search(r'\{.*\}', raw_response, re.DOTALL).group(0)
+            json_str = re.search(r'\{.*\}', current_raw, re.DOTALL).group(0)
             plan = json.loads(json_str)
             required = ["problema", "objetivo", "acoes"]
             if not all(k in plan for k in required):
@@ -205,9 +208,22 @@ def validate_and_fix_plan(raw_response: str, max_retries: int = 3) -> dict:
                 if not all(k in acao for k in ["descricao", "responsavel", "prazo", "prioridade", "indicador_sucesso"]):
                     raise ValueError("Ação incompleta")
             return plan
-        except Exception:
+        except Exception as e:
+            if attempt < max_retries - 1:
+                # Retry real: pede ao modelo que corrija o output anterior
+                retry_messages = messages + [
+                    {"role": "assistant", "content": current_raw},
+                    {"role": "user", "content":
+                        f"O JSON retornado está inválido ({e}). "
+                        "Corrija e retorne APENAS o JSON válido com os campos: "
+                        "problema, objetivo, acoes (cada ação com descricao, responsavel, prazo, prioridade, indicador_sucesso)."}
+                ]
+                try:
+                    current_raw = call_groq(retry_messages, api_key)
+                except Exception:
+                    break
             continue
-    return {"problema": "Erro na geração", "objetivo": "Corrigir output", "acoes": []}
+    return {"problema": "Erro na geração do plano", "objetivo": "Tente novamente", "acoes": []}
 
 
 def call_groq(messages: list, api_key: str) -> str:
@@ -414,12 +430,16 @@ Gere o plano de ação em JSON conforme o schema definido."""
                 "content": f"{context_message}\n\nPergunta: {msg['content']}"
             })
         else:
-            api_messages.append({"role": msg["role"], "content": msg["content"]})
+            content = msg["content"]
+            # Groq exige string em content; se for dict (plano serializado), converte para JSON
+            if isinstance(content, dict):
+                content = json.dumps(content, ensure_ascii=False)
+            api_messages.append({"role": msg["role"], "content": content})
 
     with st.spinner("🧠 Analisando dados do dashboard..."):
         try:
             raw = call_groq(api_messages, GROQ_API_KEY)
-            plan = validate_and_fix_plan(raw)
+            plan = validate_and_fix_plan(raw, api_messages, GROQ_API_KEY)
             st.session_state.chat_history.append({"role": "assistant", "content": plan})
             st.rerun()
         except Exception as e:
