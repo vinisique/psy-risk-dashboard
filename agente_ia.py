@@ -35,6 +35,20 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
+# SESSION STATE — inicializado ANTES de tudo
+# ─────────────────────────────────────────────
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "action_plans" not in st.session_state:
+    st.session_state.action_plans = []
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "chat"
+if "editing_plan_idx" not in st.session_state:
+    st.session_state.editing_plan_idx = None
+if "plan_edit_state" not in st.session_state:
+    st.session_state.plan_edit_state = {}
+
+# ─────────────────────────────────────────────
 # CHAVE API
 # ─────────────────────────────────────────────
 try:
@@ -636,20 +650,6 @@ with st.sidebar:
         <b>Contexto:</b> dashboard completo (heatmap + PGR + questões)
     </div>
     """, unsafe_allow_html=True)
-
-# ─────────────────────────────────────────────
-# SESSION STATE
-# ─────────────────────────────────────────────
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "action_plans" not in st.session_state:
-    st.session_state.action_plans = []
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "chat"
-if "editing_plan_idx" not in st.session_state:
-    st.session_state.editing_plan_idx = None
-if "plan_edit_state" not in st.session_state:
-    st.session_state.plan_edit_state = {}
 
 # ─────────────────────────────────────────────
 # CONTEXTO — build_context do analytics.py
