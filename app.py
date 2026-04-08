@@ -434,6 +434,7 @@ tabs = st.tabs([
     "🌡️ Heatmap",
     "👔 Por Cargo",
     "📋 PGR",
+    "🧠 Inteligência"
 ])
 
 # ══════════════════════════════════════════════
@@ -1121,6 +1122,61 @@ with tabs[8]:
         """, unsafe_allow_html=True)
     else:
         st.info(f"Dados de {visao_pgr} não disponíveis.")
+
+
+# ══════════════════════════════════════════════
+# TAB -1 — inteligencia
+# ══════════════════════════════════════════════
+
+with tabs[-1]:
+
+    from services.insights import gerar_insights_automaticos
+    from services.diagnosis import gerar_diagnostico
+    from services.action_plan import gerar_plano_acao
+    from services.recommendations import gerar_recomendacoes
+    from services.chat import build_context, responder_pergunta
+
+    st.markdown("## 🧠 Inteligência Analítica")
+
+    # INSIGHTS
+    if st.button("Gerar Insights"):
+        insights = gerar_insights_automaticos(setor_f, cargo_f, base_f)
+
+        for i in insights:
+            st.write(f"• {i['texto']}")
+
+    # RECOMENDAÇÕES
+    if st.button("Gerar Recomendações"):
+        recs = gerar_recomendacoes(base_f)
+
+        for r in recs:
+            st.success(r)
+
+    # DIAGNÓSTICO
+    setor_sel = st.selectbox("Selecionar setor", setor_f["Setor"])
+
+    if st.button("Gerar Diagnóstico"):
+        row = setor_f[setor_f["Setor"] == setor_sel].iloc[0]
+        diag = gerar_diagnostico(row)
+        st.markdown(diag)
+
+    # PLANO
+    if st.button("Gerar Plano de Ação"):
+        contexto = build_context(base_f, setor_f, cargo_f)
+        plano = gerar_plano_acao(contexto)
+
+        st.json(plano)
+
+    # CHAT
+    st.markdown("### 💬 Chat com os dados")
+
+    pergunta = st.text_input("Pergunte algo")
+
+    if st.button("Enviar"):
+        contexto = build_context(base_f, setor_f, cargo_f)
+        resposta = responder_pergunta(pergunta, contexto)
+
+        st.write(resposta)
 
 # ─────────────────────────────────────────────
 # FOOTER
