@@ -285,83 +285,127 @@ base, setor, cargo, unidade = _load()
 # ─────────────────────────────────────────────
 # SYSTEM PROMPT
 # ─────────────────────────────────────────────
-SYSTEM_PROMPT = """Você é o Especialista em Planos de Ação HSE-IT — um agente que gera exclusivamente planos de ação estruturados para riscos psicossociais (NR-1).
+SYSTEM_PROMPT = """Você é o Agente HSE-IT — especialista em saúde mental ocupacional, riscos psicossociais e NR-1, com acesso aos dados completos do dashboard Vivamente 360°.
 
-REGRAS OBRIGATÓRIAS (nunca quebre):
-- Você deve responder APENAS com um JSON válido, nada mais, nada menos.
-- Nunca adicione texto explicativo, introdução, conclusão ou qualquer coisa fora do JSON.
-- Use exatamente o schema abaixo.
-- Os campos devem ser claros, específicos e realistas para o contexto brasileiro de SST/RH.
-- Prioridade: "Alta", "Média" ou "Baixa".
-- Prazo: formato legível (ex: "Próximos 15 dias", "Até 30/06/2026", "90 dias").
-- Indicador de sucesso: deve ser mensurável (número, %, taxa, score, etc.).
-- Aproveite ao máximo as informações do contexto: matriz de risco por setor × dimensão,
-  PGR por setor, questões críticas, NR por cargo e unidade.
+════════════════════════════════════════════════
+REGRA FUNDAMENTAL DE FORMATO
+════════════════════════════════════════════════
+Você SEMPRE responde com um JSON válido contendo obrigatoriamente o campo "tipo".
+NUNCA adicione texto fora do JSON. NUNCA quebre esse formato.
 
-SCHEMA OBRIGATÓRIO:
+O campo "tipo" define o schema a usar:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TIPO 1 — "analise"  (use para análises, insights, explicações, alertas, dúvidas, comparações)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use quando o usuário pede: análise, explicação, comparação, alerta, resumo, tendência,
+diagnóstico, "o que está acontecendo", "por que", "quais são", "me explique", etc.
+NÃO use para pedidos explícitos de plano de ação.
+
+Schema:
 {
-  "problema": "descrição curta e clara do problema principal identificado nos dados",
-  "objetivo": "objetivo SMART do plano (o que queremos alcançar)",
+  "tipo": "analise",
+  "resposta": "texto completo da análise em markdown. Use **negrito**, bullet points, headers com ##, tabelas markdown se útil. Seja direto, técnico e orientado a dados. Cite números, scores e percentuais do contexto. Mínimo 3 parágrafos ou seções quando relevante."
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TIPO 2 — "plano_acao"  (use APENAS quando explicitamente solicitado)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use SOMENTE quando o usuário pede explicitamente: "plano de ação", "crie um plano",
+"gere ações", "monte um plano", "quero um plano", "elabore ações", "o que fazer" + contexto de execução.
+Palavras como "analisar", "explicar", "mostrar" NÃO ativam este tipo.
+
+Regras do plano:
+- Prioridade: "Alta", "Média" ou "Baixa"
+- Prazo: formato legível (ex: "30 dias", "Até 30/06/2026", "90 dias")
+- Indicador: deve ser mensurável (%, número, score, taxa)
+- Gere entre 3 e 6 ações concretas e específicas
+
+Schema:
+{
+  "tipo": "plano_acao",
+  "problema": "descrição curta do problema principal identificado nos dados",
+  "objetivo": "objetivo SMART do plano",
   "acoes": [
     {
-      "descricao": "descrição clara e acionável da ação (O quê?)",
+      "descricao": "ação clara e acionável (O quê?)",
       "porque": "justificativa específica desta ação (Por quê?)",
       "onde": "setor, área ou local de aplicação (Onde?)",
-      "responsavel": "quem executa (ex: Gestor de RH, Liderança da área, Equipe HSE) (Quem?)",
+      "responsavel": "quem executa: Gestor de RH / Liderança / Equipe HSE / etc. (Quem?)",
       "prazo": "prazo específico (Quando?)",
-      "como": "método, ferramenta ou abordagem de execução (Como?)",
+      "como": "método ou ferramenta de execução (Como?)",
       "prioridade": "Alta | Média | Baixa",
-      "indicador_sucesso": "métrica mensurável de sucesso — número, %, taxa ou score (Quanto?)"
+      "indicador_sucesso": "métrica mensurável (Quanto?)"
     }
   ]
 }
 
-Exemplos de saída CORRETA:
-{"problema":"Demandas excessivas (score 3.41/4) e NR geral elevado (12.8) em Operações","objetivo":"Reduzir score de Demandas em 1.0 ponto e NR geral abaixo de 9.0 em 90 dias","acoes":[{"descricao":"Mapear carga horária e redistribuir tarefas nas equipes sobrecarregadas","responsavel":"Gestores de Operações e RH","prazo":"30 dias","prioridade":"Alta","indicador_sucesso":"Redução de 25% nos colaboradores reportando sobrecarga"}]}
-{"problema":"Baixo Controle (score 1.2/4) e alto risco crítico (28%) nos Analistas Administrativos","objetivo":"Aumentar score de Controle para ≥2.8 e reduzir risco crítico para <10%","acoes":[{"descricao":"Ampliar autonomia decisória em processos rotineiros","responsavel":"Gestores diretos + RH","prazo":"45 dias","prioridade":"Alta","indicador_sucesso":"Aumento de 1.5 ponto no score de Controle na próxima medição"}]}
-
-Agora, com base no contexto completo do dashboard HSE-IT fornecido (que inclui a matriz de risco por setor × dimensão, PGR, questões críticas e NR por cargo), gere o plano de ação mais preciso e acionável possível.
+════════════════════════════════════════════════
+EXEMPLOS DE DECISÃO
+════════════════════════════════════════════════
+"Quais setores estão em risco crítico?" → tipo: "analise"
+"Me explique o score de Demandas" → tipo: "analise"
+"Que padrões você vê nos cargos?" → tipo: "analise"
+"Quais alertas devo levar à liderança?" → tipo: "analise"
+"Gere um plano de ação para Operações" → tipo: "plano_acao"
+"Crie ações para reduzir o risco em RH" → tipo: "plano_acao"
+"Plano de ação prioritário para os próximos 90 dias" → tipo: "plano_acao"
+"O que o PGR deve contemplar?" → tipo: "analise"
 """
 
 # ─────────────────────────────────────────────
 # FUNÇÕES
 # ─────────────────────────────────────────────
-def validate_and_fix_plan(raw_response: str, messages: list, api_key: str, max_retries: int = 3) -> dict:
-    """Valida o JSON retornado pelo agente. Se inválido, chama a API novamente
-    com uma instrução de correção até max_retries tentativas."""
-    current_raw = raw_response
+def parse_agent_response(raw: str) -> dict:
+    """
+    Extrai o JSON da resposta e garante que tem o campo 'tipo'.
+    Retorna dict com 'tipo' == 'analise' ou 'plano_acao'.
+    Em caso de falha, retorna resposta de erro como análise.
+    """
+    try:
+        json_str = re.search(r'\{.*\}', raw, re.DOTALL).group(0)
+        data = json.loads(json_str)
+        if "tipo" not in data:
+            # Heurística: se tem campo 'acoes', é plano; senão, analise
+            if "acoes" in data and "problema" in data:
+                data["tipo"] = "plano_acao"
+            else:
+                data["tipo"] = "analise"
+                data.setdefault("resposta", raw)
+        if data["tipo"] == "plano_acao":
+            # Garante campos obrigatórios do plano
+            if not all(k in data for k in ["problema", "objetivo", "acoes"]):
+                raise ValueError("Plano incompleto")
+            for a in data["acoes"]:
+                a.setdefault("porque",  data.get("objetivo", ""))
+                a.setdefault("onde",    "")
+                a.setdefault("como",    "")
+                a.setdefault("status",  "⏳ Pendente")
+        return data
+    except Exception:
+        return {"tipo": "analise", "resposta": raw}
+
+
+def fix_plan_with_retry(raw: str, messages: list, api_key: str, max_retries: int = 2) -> dict:
+    """Tenta corrigir um plano de ação inválido via retry na API."""
+    current_raw = raw
     for attempt in range(max_retries):
-        try:
-            json_str = re.search(r'\{.*\}', current_raw, re.DOTALL).group(0)
-            plan = json.loads(json_str)
-            required = ["problema", "objetivo", "acoes"]
-            if not all(k in plan for k in required):
-                raise ValueError("Campos obrigatórios ausentes")
-            for acao in plan["acoes"]:
-                if not all(k in acao for k in ["descricao", "responsavel", "prazo", "prioridade", "indicador_sucesso"]):
-                    raise ValueError("Ação incompleta")
-            # Preenche campos opcionais com fallback se ausentes
-            for acao in plan["acoes"]:
-                acao.setdefault("porque", plan.get("objetivo",""))
-                acao.setdefault("onde", "")
-                acao.setdefault("como", acao.get("indicador_sucesso",""))
-            return plan
-        except Exception as e:
-            if attempt < max_retries - 1:
-                # Retry real: pede ao modelo que corrija o output anterior
-                retry_messages = messages + [
-                    {"role": "assistant", "content": current_raw},
-                    {"role": "user", "content":
-                        f"O JSON retornado está inválido ({e}). "
-                        "Corrija e retorne APENAS o JSON válido com os campos: "
-                        "problema, objetivo, acoes (cada ação com descricao, responsavel, prazo, prioridade, indicador_sucesso)."}
-                ]
-                try:
-                    current_raw = call_groq(retry_messages, api_key)
-                except Exception:
-                    break
-            continue
-    return {"problema": "Erro na geração do plano", "objetivo": "Tente novamente", "acoes": []}
+        result = parse_agent_response(current_raw)
+        if result["tipo"] == "plano_acao" and result.get("acoes"):
+            return result
+        if attempt < max_retries - 1:
+            retry_messages = messages + [
+                {"role": "assistant", "content": current_raw},
+                {"role": "user", "content":
+                    "O JSON retornado está inválido ou incompleto. "
+                    "Retorne APENAS um JSON válido com tipo='plano_acao', problema, objetivo e acoes "
+                    "(cada ação com: descricao, porque, onde, responsavel, prazo, como, prioridade, indicador_sucesso)."}
+            ]
+            try:
+                current_raw = call_groq(retry_messages, api_key)
+            except Exception:
+                break
+    return {"tipo": "analise", "resposta": "❌ Não foi possível gerar o plano. Tente reformular o pedido."}
 
 
 def call_groq(messages: list, api_key: str) -> str:
@@ -370,10 +414,10 @@ def call_groq(messages: list, api_key: str) -> str:
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
-            "model": "llama-3.3-70b-versatile",
-            "max_tokens": 2048,
-            "messages": groq_messages,
-            "temperature": 0.2,
+            "model"          : "llama-3.3-70b-versatile",
+            "max_tokens"     : 2048,
+            "messages"       : groq_messages,
+            "temperature"    : 0.3,
             "response_format": {"type": "json_object"},
         },
         timeout=60,
@@ -812,48 +856,61 @@ if not st.session_state.chat_history:
 for msg_idx, msg in enumerate(st.session_state.chat_history):
     if msg["role"] == "user":
         st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
-    else:
-        content = msg["content"]
-        if isinstance(content, dict):
-            plan_key = f"chat_plan_{msg_idx}"
-            st.markdown(f"""
-            <div style="border-left:3px solid {COR_PURPLE};padding-left:12px;margin:8px 0 4px 0;">
-                <span style="font-size:13px;font-weight:600;color:{COR_PURPLE};">🤖 Agente HSE-IT</span>
-                <span style="font-size:11px;color:{COR_MUTED};margin-left:8px;">· Plano de Ação · 5W2H</span>
-            </div>
-            """, unsafe_allow_html=True)
+        continue
 
-            edited_df = render_5w2h_card(content, plan_key, editable=True)
+    content = msg["content"]
 
-            col_save, col_info, _ = st.columns([2, 3, 4])
-            with col_save:
-                if st.button("💾 Salvar Plano de Ação", key=f"save_{plan_key}",
-                             use_container_width=True, type="primary"):
-                    # Rebuild plan from the edited dataframe
-                    acoes_atualizadas = dataframe_to_acoes(edited_df, content.get("acoes", []))
-                    updated = {**content, "acoes": acoes_atualizadas}
-                    st.session_state.action_plans.append({
-                        "plan": updated,
-                        "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                    })
-                    st.session_state.chat_history[msg_idx]["content"] = updated
-                    st.success("✅ Plano salvo! Acesse em **Planos de Ação** na barra lateral.")
-            with col_info:
-                st.markdown(f"""
-                <div style="font-size:11px;color:{COR_MUTED};padding-top:8px;">
-                    ✏️ Clique em qualquer célula para editar · depois clique em Salvar
-                </div>""", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-        else:
-            content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
-            content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
-            content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
-            st.markdown(f'''
-            <div class="msg-agent">
-            🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
-            {content_html}
-            </div>
-            ''', unsafe_allow_html=True)
+    # ── Resposta de ANÁLISE (texto) ──
+    if isinstance(content, str) or (isinstance(content, dict) and content.get("tipo") == "analise"):
+        texto = content if isinstance(content, str) else content.get("resposta", "")
+        st.markdown(f'''
+        <div class="msg-agent">
+        🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
+        </div>
+        ''', unsafe_allow_html=True)
+        # Renderiza markdown nativamente para preservar formatação (tabelas, bullets, bold)
+        st.markdown(texto)
+
+    # ── Resposta de PLANO DE AÇÃO (tabela 5W2H) ──
+    elif isinstance(content, dict) and content.get("tipo") == "plano_acao":
+        plan_key = f"chat_plan_{msg_idx}"
+        st.markdown(f"""
+        <div style="border-left:3px solid {COR_PURPLE};padding-left:12px;margin:8px 0 4px 0;">
+            <span style="font-size:13px;font-weight:600;color:{COR_PURPLE};">🤖 Agente HSE-IT</span>
+            <span style="font-size:11px;color:{COR_MUTED};margin-left:8px;">· Plano de Ação · 5W2H</span>
+        </div>
+        """, unsafe_allow_html=True)
+        edited_df = render_5w2h_card(content, plan_key, editable=True)
+        col_save, col_info, _ = st.columns([2, 3, 4])
+        with col_save:
+            if st.button("💾 Salvar Plano de Ação", key=f"save_{plan_key}",
+                         use_container_width=True, type="primary"):
+                acoes_atualizadas = dataframe_to_acoes(edited_df, content.get("acoes", []))
+                updated = {**content, "acoes": acoes_atualizadas}
+                st.session_state.action_plans.append({
+                    "plan": updated,
+                    "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                })
+                st.session_state.chat_history[msg_idx]["content"] = updated
+                st.success("✅ Plano salvo! Acesse em **Planos de Ação** na barra lateral.")
+        with col_info:
+            st.markdown(f'<div style="font-size:11px;color:{COR_MUTED};padding-top:8px;">'
+                        f'✏️ Clique em <b>Editar tabela</b> para ajustar · depois <b>Salvar</b></div>',
+                        unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Fallback: plano antigo sem campo 'tipo' (retrocompatibilidade) ──
+    elif isinstance(content, dict) and "acoes" in content:
+        plan_key = f"chat_plan_{msg_idx}"
+        content["tipo"] = "plano_acao"  # normaliza
+        st.markdown(f"""
+        <div style="border-left:3px solid {COR_PURPLE};padding-left:12px;margin:8px 0 4px 0;">
+            <span style="font-size:13px;font-weight:600;color:{COR_PURPLE};">🤖 Agente HSE-IT</span>
+            <span style="font-size:11px;color:{COR_MUTED};margin-left:8px;">· Plano de Ação · 5W2H</span>
+        </div>
+        """, unsafe_allow_html=True)
+        edited_df = render_5w2h_card(content, plan_key, editable=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # INPUT DO USUÁRIO
@@ -906,16 +963,22 @@ Gere o plano de ação em JSON conforme o schema definido."""
             })
         else:
             content = msg["content"]
-            # Groq exige string em content; se for dict (plano serializado), converte para JSON
+            # Groq exige string em content; serializa dicts (analise ou plano_acao)
             if isinstance(content, dict):
-                content = json.dumps(content, ensure_ascii=False)
+                if content.get("tipo") == "analise":
+                    content = content.get("resposta", "")
+                else:
+                    content = json.dumps(content, ensure_ascii=False)
             api_messages.append({"role": msg["role"], "content": content})
 
     with st.spinner("🧠 Analisando dados do dashboard..."):
         try:
             raw = call_groq(api_messages, GROQ_API_KEY)
-            plan = validate_and_fix_plan(raw, api_messages, GROQ_API_KEY)
-            st.session_state.chat_history.append({"role": "assistant", "content": plan})
+            result = parse_agent_response(raw)
+            # Se foi pedido plano mas saiu incompleto, tenta corrigir
+            if result.get("tipo") == "plano_acao" and not result.get("acoes"):
+                result = fix_plan_with_retry(raw, api_messages, GROQ_API_KEY)
+            st.session_state.chat_history.append({"role": "assistant", "content": result})
             st.rerun()
         except Exception as e:
             st.error(f"❌ Erro ao consultar o agente: {str(e)}")
