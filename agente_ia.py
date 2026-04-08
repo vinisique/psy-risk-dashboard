@@ -3,8 +3,9 @@
 Analisa os dados de riscos psicossociais e gera insights acionáveis.
 Tecnologia: Groq API (llama-3.3-70b-versatile) + Streamlit
 
-ATUALIZAÇÃO v2: plano de ação em padrão 5W2H, editável, persistente e com
-acompanhamento de status por ação (Pendente / Em andamento / Concluído).
+ATUALIZAÇÃO: agora usa analytics.py como módulo compartilhado,
+aproveitando TODAS as análises do dashboard (heatmap, PGR, matriz
+de dimensões por setor/cargo, questões críticas, etc.).
 """
 
 import streamlit as st
@@ -12,15 +13,13 @@ import pandas as pd
 import json
 import os
 import re
-import uuid
 import requests
 from datetime import datetime
-from pathlib import Path
 
 # ── Módulo compartilhado com o dashboard ──────────────────────────────────────
 from analytics import (
     load_all_data,
-    build_context,
+    build_context,          # aplica filtros + roda analytics completo
     DIMENSOES, DIMENSOES_LABEL, DIM_NEGATIVAS,
     NIVEIS_ORDEM, NIVEIS_GERAL_ORDEM,
 )
@@ -59,28 +58,6 @@ COR_TEXTO    = "#E8EAF0"
 COR_MUTED    = "#6B7280"
 COR_ACCENT   = "#4F8EF7"
 COR_PURPLE   = "#A78BFA"
-
-STATUS_CONFIG = {
-    "Pendente":      {"cor": COR_CINZA,    "emoji": "⏳"},
-    "Em andamento":  {"cor": COR_AMARELO,  "emoji": "🔄"},
-    "Concluído":     {"cor": COR_VERDE,    "emoji": "✅"},
-}
-
-# ─────────────────────────────────────────────
-# PERSISTÊNCIA
-# ─────────────────────────────────────────────
-PLANS_FILE = Path("hse_planos.json")
-
-def load_saved_plans() -> dict:
-    if PLANS_FILE.exists():
-        try:
-            return json.loads(PLANS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-def save_plans(plans: dict):
-    PLANS_FILE.write_text(json.dumps(plans, ensure_ascii=False, indent=2), encoding="utf-8")
 
 # ─────────────────────────────────────────────
 # CSS
@@ -164,51 +141,120 @@ html, body, [class*="css"] {{
     font-size: 24px; flex-shrink: 0;
 }}
 
-/* Plano 5W2H */
-.plan-header {{
-    background: linear-gradient(135deg, #1e2a4a 0%, #1A1D27 100%);
-    border: 1px solid {COR_ACCENT}44;
+/* 5W2H TABLE STYLES */
+.w2h-wrapper {{
+    background: {COR_CARD};
+    border: 1px solid {COR_BORDA};
+    border-radius: 4px 16px 16px 16px;
+    padding: 20px;
+    margin: 8px 10% 8px 0;
+}}
+.w2h-header {{
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 12px;
+}}
+.w2h-problema {{
+    background: #1e1e30;
+    border-left: 3px solid {COR_PURPLE};
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin-bottom: 6px;
+    font-size: 13px;
+}}
+.w2h-objetivo {{
+    background: #1a2a1a;
+    border-left: 3px solid {COR_VERDE};
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+}}
+.w2h-table {{
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid {COR_BORDA};
+}}
+.w2h-table th {{
+    padding: 10px 10px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    border-bottom: 2px solid {COR_BORDA};
+    border-right: 1px solid {COR_BORDA};
+}}
+.w2h-table td {{
+    padding: 10px 10px;
+    vertical-align: top;
+    border-bottom: 1px solid {COR_BORDA};
+    border-right: 1px solid {COR_BORDA};
+    line-height: 1.5;
+    font-size: 12px;
+}}
+.w2h-table tr:last-child td {{ border-bottom: none; }}
+.w2h-table td:last-child, .w2h-table th:last-child {{ border-right: none; }}
+.w2h-table tr:nth-child(even) td {{ background: rgba(255,255,255,0.02); }}
+.th-what   {{ background: #4c1d95; color: #e9d5ff; }}
+.th-why    {{ background: #7c2d8e; color: #f3e8ff; }}
+.th-where  {{ background: #be185d; color: #fce7f3; }}
+.th-when   {{ background: #c2410c; color: #ffedd5; }}
+.th-who    {{ background: #b45309; color: #fef3c7; }}
+.th-how    {{ background: #047857; color: #d1fae5; }}
+.th-howmuch{{ background: #0e7490; color: #cffafe; }}
+.th-status {{ background: #374151; color: #f9fafb; }}
+.badge-alta    {{ background: {COR_VERMELHO}22; color: {COR_VERMELHO}; border:1px solid {COR_VERMELHO}44; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:600; }}
+.badge-media   {{ background: {COR_AMARELO}22; color: {COR_AMARELO}; border:1px solid {COR_AMARELO}44; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:600; }}
+.badge-baixa   {{ background: {COR_VERDE}22; color: {COR_VERDE}; border:1px solid {COR_VERDE}44; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:600; }}
+.badge-pendente    {{ background: #374151; color: #9ca3af; border:1px solid #4b5563; border-radius:6px; padding:2px 8px; font-size:11px; }}
+.badge-em-andamento{{ background: {COR_ACCENT}22; color: {COR_ACCENT}; border:1px solid {COR_ACCENT}44; border-radius:6px; padding:2px 8px; font-size:11px; }}
+.badge-concluido   {{ background: {COR_VERDE}22; color: {COR_VERDE}; border:1px solid {COR_VERDE}44; border-radius:6px; padding:2px 8px; font-size:11px; }}
+.badge-cancelado   {{ background: #dc262622; color: #ef4444; border:1px solid #ef444444; border-radius:6px; padding:2px 8px; font-size:11px; }}
+
+/* TAB NAV */
+.tab-nav {{
+    display: flex; gap: 8px; margin-bottom: 1.5rem;
+    border-bottom: 1px solid {COR_BORDA}; padding-bottom: 0;
+}}
+.tab-btn {{
+    padding: 10px 20px; background: transparent;
+    border: none; border-bottom: 2px solid transparent;
+    color: {COR_MUTED}; font-size: 14px; font-weight: 500;
+    cursor: pointer; transition: all .2s;
+}}
+.tab-btn.active {{
+    color: {COR_ACCENT}; border-bottom-color: {COR_ACCENT};
+}}
+
+/* PLAN CARD in plans tab */
+.plan-card {{
+    background: {COR_CARD};
+    border: 1px solid {COR_BORDA};
     border-radius: 12px;
     padding: 16px 20px;
     margin-bottom: 12px;
+    transition: border-color .2s;
 }}
-.w2h-badge {{
-    display: inline-block;
-    background: {COR_ACCENT}22;
-    color: {COR_ACCENT};
-    border: 1px solid {COR_ACCENT}44;
-    border-radius: 6px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    font-family: 'DM Mono', monospace;
-    margin-right: 6px;
+.plan-card:hover {{ border-color: {COR_ACCENT}55; }}
+.plan-card-title {{
+    font-size: 14px; font-weight: 600; color: {COR_TEXTO};
+    margin-bottom: 4px;
 }}
-.progress-bar-bg {{
-    background: {COR_BORDA};
-    border-radius: 99px;
-    height: 8px;
-    width: 100%;
-    margin-top: 4px;
+.plan-card-meta {{
+    font-size: 12px; color: {COR_MUTED};
 }}
-.progress-bar-fill {{
-    border-radius: 99px;
-    height: 8px;
-    transition: width 0.3s ease;
+.progress-bar-outer {{
+    background: {COR_BORDA}; border-radius: 4px; height: 6px;
+    margin: 10px 0 4px;
 }}
-.acao-card {{
-    background: {COR_CARD};
-    border: 1px solid {COR_BORDA};
-    border-radius: 10px;
-    padding: 14px 16px;
-    margin: 8px 0;
-}}
-.status-badge {{
-    display: inline-block;
-    border-radius: 6px;
-    padding: 3px 10px;
-    font-size: 12px;
-    font-weight: 600;
+.progress-bar-inner {{
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, {COR_ACCENT}, {COR_PURPLE});
+    transition: width .4s ease;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -223,29 +269,20 @@ def _load():
 base, setor, cargo, unidade = _load()
 
 # ─────────────────────────────────────────────
-# SYSTEM PROMPT — 5W2H
+# SYSTEM PROMPT
 # ─────────────────────────────────────────────
-SYSTEM_PROMPT = """Você é o Especialista em Planos de Ação HSE-IT — um agente que gera exclusivamente planos de ação estruturados para riscos psicossociais (NR-1), seguindo rigorosamente o padrão 5W2H.
+SYSTEM_PROMPT = """Você é o Especialista em Planos de Ação HSE-IT — um agente que gera exclusivamente planos de ação estruturados para riscos psicossociais (NR-1).
 
 REGRAS OBRIGATÓRIAS (nunca quebre):
 - Você deve responder APENAS com um JSON válido, nada mais, nada menos.
 - Nunca adicione texto explicativo, introdução, conclusão ou qualquer coisa fora do JSON.
-- Use exatamente o schema abaixo com o padrão 5W2H completo.
+- Use exatamente o schema abaixo.
 - Os campos devem ser claros, específicos e realistas para o contexto brasileiro de SST/RH.
 - Prioridade: "Alta", "Média" ou "Baixa".
-- Prazo (when): formato legível (ex: "Próximos 15 dias", "Até 30/06/2026", "90 dias").
+- Prazo: formato legível (ex: "Próximos 15 dias", "Até 30/06/2026", "90 dias").
 - Indicador de sucesso: deve ser mensurável (número, %, taxa, score, etc.).
-- Custo estimado (how_much): valor estimado ou "A definir" se não aplicável.
-- Aproveite ao máximo as informações do contexto fornecido.
-
-DEFINIÇÃO DO 5W2H:
-- What (O quê): descrição clara da ação a ser executada
-- Why (Por quê): justificativa baseada nos dados de risco
-- Who (Quem): responsável pela execução
-- Where (Onde): local/setor/área de aplicação
-- When (Quando): prazo e frequência
-- How (Como): metodologia/forma de execução
-- How Much (Quanto custa): custo estimado ou recurso necessário
+- Aproveite ao máximo as informações do contexto: matriz de risco por setor × dimensão,
+  PGR por setor, questões críticas, NR por cargo e unidade.
 
 SCHEMA OBRIGATÓRIO:
 {
@@ -253,65 +290,56 @@ SCHEMA OBRIGATÓRIO:
   "objetivo": "objetivo SMART do plano (o que queremos alcançar)",
   "acoes": [
     {
-      "what": "descrição clara e acionável da ação (O quê)",
-      "why": "justificativa baseada nos dados de risco (Por quê)",
-      "who": "quem executa (ex: Gestor de RH, Liderança da área, Equipe HSE)",
-      "where": "local, setor ou área de aplicação (Onde)",
-      "when": "prazo específico e frequência se aplicável (Quando)",
-      "how": "método ou forma de executar a ação (Como)",
-      "how_much": "custo estimado ou recursos necessários (Quanto custa)",
+      "descricao": "descrição clara e acionável da ação",
+      "responsavel": "quem executa (ex: Gestor de RH, Liderança da área, Equipe HSE, etc.)",
+      "prazo": "prazo específico",
       "prioridade": "Alta | Média | Baixa",
       "indicador_sucesso": "métrica mensurável de sucesso"
     }
   ]
 }
 
-Exemplo de saída CORRETA:
-{"problema":"Demandas excessivas (score 3.41/4) em Operações","objetivo":"Reduzir score de Demandas em 1.0 ponto em 90 dias","acoes":[{"what":"Redistribuição de carga horária e tarefas","why":"Score de Demandas 3.41/4 indica sobrecarga crítica afetando 68% da equipe","who":"Gestores de Operações e RH","where":"Setor de Operações","when":"30 dias, revisão mensal","how":"Workshop de mapeamento de processos + reuniões individuais de alinhamento","how_much":"16h de consultoria interna (sem custo adicional)","prioridade":"Alta","indicador_sucesso":"Redução de 25% nos colaboradores reportando sobrecarga na próxima medição"}]}
+Exemplos de saída CORRETA:
+{"problema":"Demandas excessivas (score 3.41/4) e NR geral elevado (12.8) em Operações","objetivo":"Reduzir score de Demandas em 1.0 ponto e NR geral abaixo de 9.0 em 90 dias","acoes":[{"descricao":"Mapear carga horária e redistribuir tarefas nas equipes sobrecarregadas","responsavel":"Gestores de Operações e RH","prazo":"30 dias","prioridade":"Alta","indicador_sucesso":"Redução de 25% nos colaboradores reportando sobrecarga"}]}
+{"problema":"Baixo Controle (score 1.2/4) e alto risco crítico (28%) nos Analistas Administrativos","objetivo":"Aumentar score de Controle para ≥2.8 e reduzir risco crítico para <10%","acoes":[{"descricao":"Ampliar autonomia decisória em processos rotineiros","responsavel":"Gestores diretos + RH","prazo":"45 dias","prioridade":"Alta","indicador_sucesso":"Aumento de 1.5 ponto no score de Controle na próxima medição"}]}
 
-Gere o plano mais preciso e acionável possível com base no contexto HSE-IT fornecido.
+Agora, com base no contexto completo do dashboard HSE-IT fornecido (que inclui a matriz de risco por setor × dimensão, PGR, questões críticas e NR por cargo), gere o plano de ação mais preciso e acionável possível.
 """
 
 # ─────────────────────────────────────────────
-# FUNÇÕES AUXILIARES
+# FUNÇÕES
 # ─────────────────────────────────────────────
 def validate_and_fix_plan(raw_response: str, messages: list, api_key: str, max_retries: int = 3) -> dict:
-    """Valida o JSON 5W2H retornado. Se inválido, tenta corrigir via API."""
-    REQUIRED_ACTION_KEYS = ["what", "why", "who", "where", "when", "how", "how_much", "prioridade", "indicador_sucesso"]
+    """Valida o JSON retornado pelo agente. Se inválido, chama a API novamente
+    com uma instrução de correção até max_retries tentativas."""
     current_raw = raw_response
     for attempt in range(max_retries):
         try:
             json_str = re.search(r'\{.*\}', current_raw, re.DOTALL).group(0)
             plan = json.loads(json_str)
-            if not all(k in plan for k in ["problema", "objetivo", "acoes"]):
-                raise ValueError("Campos raiz ausentes")
+            required = ["problema", "objetivo", "acoes"]
+            if not all(k in plan for k in required):
+                raise ValueError("Campos obrigatórios ausentes")
             for acao in plan["acoes"]:
-                if not all(k in acao for k in REQUIRED_ACTION_KEYS):
-                    raise ValueError(f"Ação incompleta — faltam: {[k for k in REQUIRED_ACTION_KEYS if k not in acao]}")
-            # Injeta campos de controle
-            for acao in plan["acoes"]:
-                acao.setdefault("status", "Pendente")
-                acao.setdefault("id", str(uuid.uuid4())[:8])
-                acao.setdefault("notas", "")
-                acao.setdefault("data_conclusao", "")
-            plan["id"] = str(uuid.uuid4())[:12]
-            plan["criado_em"] = datetime.now().strftime("%d/%m/%Y %H:%M")
-            plan["titulo"] = plan["problema"][:60]
+                if not all(k in acao for k in ["descricao", "responsavel", "prazo", "prioridade", "indicador_sucesso"]):
+                    raise ValueError("Ação incompleta")
             return plan
         except Exception as e:
             if attempt < max_retries - 1:
+                # Retry real: pede ao modelo que corrija o output anterior
                 retry_messages = messages + [
                     {"role": "assistant", "content": current_raw},
                     {"role": "user", "content":
                         f"O JSON retornado está inválido ({e}). "
-                        "Corrija e retorne APENAS o JSON válido com o padrão 5W2H: "
-                        "problema, objetivo, acoes (cada ação com what, why, who, where, when, how, how_much, prioridade, indicador_sucesso)."}
+                        "Corrija e retorne APENAS o JSON válido com os campos: "
+                        "problema, objetivo, acoes (cada ação com descricao, responsavel, prazo, prioridade, indicador_sucesso)."}
                 ]
                 try:
                     current_raw = call_groq(retry_messages, api_key)
                 except Exception:
                     break
-    return {"problema": "Erro na geração", "objetivo": "Tente novamente", "acoes": [], "id": "err", "criado_em": "", "titulo": "Erro"}
+            continue
+    return {"problema": "Erro na geração do plano", "objetivo": "Tente novamente", "acoes": []}
 
 
 def call_groq(messages: list, api_key: str) -> str:
@@ -321,7 +349,7 @@ def call_groq(messages: list, api_key: str) -> str:
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
             "model": "llama-3.3-70b-versatile",
-            "max_tokens": 3000,
+            "max_tokens": 2048,
             "messages": groq_messages,
             "temperature": 0.2,
             "response_format": {"type": "json_object"},
@@ -337,162 +365,227 @@ def call_groq(messages: list, api_key: str) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
-def calc_progress(plan: dict) -> tuple[int, int, int]:
-    """Retorna (concluídas, em_andamento, total)."""
+# ─────────────────────────────────────────────
+# 5W2H TABLE RENDERING
+# ─────────────────────────────────────────────
+STATUS_OPTIONS = ["⏳ Pendente", "🔄 Em andamento", "✅ Concluído", "❌ Cancelado"]
+PRIORIDADE_OPTIONS = ["Alta", "Média", "Baixa"]
+
+STATUS_BADGE = {
+    "⏳ Pendente":      "badge-pendente",
+    "🔄 Em andamento":  "badge-em-andamento",
+    "✅ Concluído":     "badge-concluido",
+    "❌ Cancelado":     "badge-cancelado",
+}
+PRIORIDADE_BADGE = {
+    "Alta":  "badge-alta",
+    "Média": "badge-media",
+    "Baixa": "badge-baixa",
+}
+
+
+def render_5w2h_table_html(plan: dict, plan_key: str, editable: bool = True, saved_idx: int = None):
+    """Renders the 5W2H table. If editable=True, shows Streamlit widgets for editing."""
     acoes = plan.get("acoes", [])
-    total = len(acoes)
-    concluidas = sum(1 for a in acoes if a.get("status") == "Concluído")
-    em_andamento = sum(1 for a in acoes if a.get("status") == "Em andamento")
-    return concluidas, em_andamento, total
+
+    # ── Static HTML header + problema/objetivo ──
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <div style="width:32px;height:32px;background:linear-gradient(135deg,{COR_ACCENT},{COR_PURPLE});
+             border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">🎯</div>
+        <div>
+            <div style="font-size:15px;font-weight:600;">Plano de Ação · 5W2H</div>
+            <div style="font-size:11px;color:{COR_MUTED};">Gerado pelo Agente HSE-IT</div>
+        </div>
+    </div>
+    <div class="w2h-problema">
+        <span style="font-size:10px;color:{COR_PURPLE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">Problema</span><br>
+        {plan.get('problema','—')}
+    </div>
+    <div class="w2h-objetivo">
+        <span style="font-size:10px;color:{COR_VERDE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">Objetivo SMART</span><br>
+        {plan.get('objetivo','—')}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Table header ──
+    st.markdown("""
+    <table class="w2h-table">
+      <thead>
+        <tr>
+          <th class="th-what">O quê?</th>
+          <th class="th-why">Por quê?</th>
+          <th class="th-where">Onde?</th>
+          <th class="th-when">Quando?</th>
+          <th class="th-who">Quem?</th>
+          <th class="th-how">Como?</th>
+          <th class="th-howmuch">Quanto?</th>
+          <th class="th-status">Status</th>
+        </tr>
+      </thead>
+    </table>
+    """, unsafe_allow_html=True)
+
+    # ── Per-row rendering with editable widgets ──
+    for i, acao in enumerate(acoes):
+        row_key = f"{plan_key}_row{i}"
+        status_key  = f"{row_key}_status"
+        desc_key    = f"{row_key}_desc"
+        resp_key    = f"{row_key}_resp"
+        prazo_key   = f"{row_key}_prazo"
+        prio_key    = f"{row_key}_prio"
+        ind_key     = f"{row_key}_ind"
+
+        # Initialize session state defaults
+        if status_key not in st.session_state:
+            st.session_state[status_key] = acao.get("status", "⏳ Pendente")
+        if editable:
+            if desc_key  not in st.session_state: st.session_state[desc_key]  = acao.get("descricao", "")
+            if resp_key  not in st.session_state: st.session_state[resp_key]  = acao.get("responsavel", "")
+            if prazo_key not in st.session_state: st.session_state[prazo_key] = acao.get("prazo", "")
+            if prio_key  not in st.session_state: st.session_state[prio_key]  = acao.get("prioridade", "Alta")
+            if ind_key   not in st.session_state: st.session_state[ind_key]   = acao.get("indicador_sucesso", "")
+
+        # Render row as expandable section
+        prio = st.session_state.get(prio_key, acao.get("prioridade","Alta")) if editable else acao.get("prioridade","Alta")
+        status = st.session_state.get(status_key, acao.get("status","⏳ Pendente"))
+        prio_badge  = PRIORIDADE_BADGE.get(prio, "badge-baixa")
+        status_badge = STATUS_BADGE.get(status, "badge-pendente")
+
+        st.markdown(f"""
+        <div style="background:#15171f;border:1px solid {COR_BORDA};border-radius:8px;padding:12px 16px;margin:4px 0;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-size:11px;color:{COR_MUTED};">Ação {i+1}</span>
+            <div style="display:flex;gap:6px;">
+              <span class="{prio_badge}">{prio}</span>
+              <span class="{status_badge}">{status}</span>
+            </div>
+          </div>
+        """, unsafe_allow_html=True)
+
+        if editable:
+            c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
+            with c1:
+                st.text_area("O quê? (descrição)", key=desc_key, height=70, label_visibility="collapsed",
+                             placeholder="O quê? Descreva a ação...")
+            with c2:
+                st.text_input("Quem?", key=resp_key, label_visibility="collapsed", placeholder="Quem? Responsável...")
+                st.text_input("Quando?", key=prazo_key, label_visibility="collapsed", placeholder="Quando? Prazo...")
+            with c3:
+                st.selectbox("Prioridade", PRIORIDADE_OPTIONS, key=prio_key, label_visibility="collapsed")
+                st.selectbox("Status", STATUS_OPTIONS, key=status_key, label_visibility="collapsed")
+            with c4:
+                st.text_area("Indicador", key=ind_key, height=70, label_visibility="collapsed",
+                             placeholder="Indicador de sucesso...")
+        else:
+            # Read-only view
+            desc  = acao.get("descricao", "—")
+            resp  = acao.get("responsavel", "—")
+            prazo = acao.get("prazo", "—")
+            ind   = acao.get("indicador_sucesso", "—")
+            st.markdown(f"""
+            <div style="display:grid;grid-template-columns:3fr 1fr 1fr 2fr;gap:10px;font-size:12px;">
+              <div><span style="color:{COR_MUTED};font-size:10px;">O QUÊ</span><br>{desc}</div>
+              <div><span style="color:{COR_MUTED};font-size:10px;">QUEM</span><br>{resp}</div>
+              <div><span style="color:{COR_MUTED};font-size:10px;">QUANDO</span><br>{prazo}</div>
+              <div><span style="color:{COR_MUTED};font-size:10px;">INDICADOR</span><br>{ind}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            st.selectbox("Status", STATUS_OPTIONS,
+                         index=STATUS_OPTIONS.index(status) if status in STATUS_OPTIONS else 0,
+                         key=status_key, label_visibility="collapsed")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    return acoes
 
 
-def render_progress_bar(concluidas: int, em_andamento: int, total: int):
-    if total == 0:
+def collect_edited_plan(plan: dict, plan_key: str) -> dict:
+    """Collects current widget values into updated plan dict."""
+    acoes = plan.get("acoes", [])
+    updated_acoes = []
+    for i, acao in enumerate(acoes):
+        row_key = f"{plan_key}_row{i}"
+        updated_acoes.append({
+            "descricao":        st.session_state.get(f"{row_key}_desc", acao.get("descricao","")),
+            "responsavel":      st.session_state.get(f"{row_key}_resp", acao.get("responsavel","")),
+            "prazo":            st.session_state.get(f"{row_key}_prazo", acao.get("prazo","")),
+            "prioridade":       st.session_state.get(f"{row_key}_prio", acao.get("prioridade","Alta")),
+            "indicador_sucesso":st.session_state.get(f"{row_key}_ind", acao.get("indicador_sucesso","")),
+            "status":           st.session_state.get(f"{row_key}_status", acao.get("status","⏳ Pendente")),
+        })
+    return {**plan, "acoes": updated_acoes}
+
+
+def compute_plan_progress(plan: dict) -> float:
+    """Returns fraction of concluded actions."""
+    acoes = plan.get("acoes", [])
+    if not acoes: return 0.0
+    done = sum(1 for a in acoes if a.get("status","") == "✅ Concluído")
+    return done / len(acoes)
+
+
+def render_plans_tab():
+    """Renders the saved action plans tab."""
+    plans = st.session_state.action_plans
+    if not plans:
+        st.markdown(f"""
+        <div style="text-align:center;padding:60px 20px;color:{COR_MUTED};">
+            <div style="font-size:48px;margin-bottom:16px;">📋</div>
+            <div style="font-size:16px;font-weight:600;color:{COR_TEXTO};margin-bottom:8px;">Nenhum plano salvo ainda</div>
+            <div style="font-size:13px;">Gere um plano de ação no chat e clique em <b>Salvar Plano</b> para acompanhá-lo aqui.</div>
+        </div>
+        """, unsafe_allow_html=True)
         return
-    pct_concluido = concluidas / total * 100
-    pct_andamento = em_andamento / total * 100
-    st.markdown(f"""
-    <div style="margin: 4px 0 12px 0;">
-        <div style="display:flex; justify-content:space-between; font-size:12px; color:{COR_MUTED}; margin-bottom:4px;">
-            <span>✅ {concluidas}/{total} ações concluídas</span>
-            <span style="color:{COR_ACCENT};">{pct_concluido:.0f}% completo</span>
-        </div>
-        <div class="progress-bar-bg">
-            <div class="progress-bar-fill" style="width:{pct_concluido:.1f}%; background:{COR_VERDE};"></div>
-        </div>
-        <div style="display:flex; gap:16px; margin-top:6px; font-size:11px;">
-            <span style="color:{COR_VERDE};">⬤ Concluído: {concluidas}</span>
-            <span style="color:{COR_AMARELO};">⬤ Em andamento: {em_andamento}</span>
-            <span style="color:{COR_CINZA};">⬤ Pendente: {total - concluidas - em_andamento}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
+    st.markdown(f'<div class="section-title">📋 {len(plans)} plano(s) de ação salvos</div>', unsafe_allow_html=True)
 
-def render_plan_card(plan: dict, plan_key: str, edit_mode: bool = False):
-    """Renderiza um plano de ação 5W2H completo com editor opcional."""
-    concluidas, em_andamento, total = calc_progress(plan)
+    for idx, saved in enumerate(plans):
+        plan = saved["plan"]
+        created_at = saved.get("created_at","—")
+        progress = compute_plan_progress(plan)
+        n_acoes = len(plan.get("acoes",[]))
+        n_done  = int(progress * n_acoes)
+        prog_pct = int(progress * 100)
 
-    # Cabeçalho do plano
-    st.markdown(f"""
-    <div class="plan-header">
-        <div style="font-size:11px; color:{COR_MUTED}; margin-bottom:4px; font-family:'DM Mono',monospace;">
-            PLANO · {plan.get('criado_em', '')} · ID {plan.get('id', '')}
-        </div>
-        <div style="font-size:17px; font-weight:600; color:{COR_TEXTO}; margin-bottom:6px;">
-            🎯 {plan.get('problema', '')}
-        </div>
-        <div style="font-size:13px; color:{COR_MUTED};">
-            <b style="color:{COR_ACCENT};">Objetivo:</b> {plan.get('objetivo', '')}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        with st.expander(f"📌 {plan.get('problema','Plano')[:80]}  ·  {prog_pct}% concluído  ·  Salvo em {created_at}", expanded=(idx==0)):
+            plan_key = f"saved_plan_{idx}"
 
-    render_progress_bar(concluidas, em_andamento, total)
+            # Progress bar
+            st.markdown(f"""
+            <div style="margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;font-size:11px;color:{COR_MUTED};margin-bottom:4px;">
+                    <span>Progresso geral</span><span>{n_done}/{n_acoes} ações concluídas</span>
+                </div>
+                <div class="progress-bar-outer">
+                    <div class="progress-bar-inner" style="width:{prog_pct}%"></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    # Cabeçalho da tabela 5W2H
-    labels_5w2h = [
-        ("🔵 O quê", "what"),
-        ("❓ Por quê", "why"),
-        ("👤 Quem", "who"),
-        ("📍 Onde", "where"),
-        ("📅 Quando", "when"),
-        ("⚙️ Como", "how"),
-        ("💰 Quanto custa", "how_much"),
-    ]
+            # Render table (editable for status updates)
+            render_5w2h_table_html(plan, plan_key, editable=False, saved_idx=idx)
 
-    saved_plans = st.session_state.get("saved_plans", {})
-
-    for idx, acao in enumerate(plan.get("acoes", [])):
-        acao_id = acao.get("id", str(idx))
-        status  = acao.get("status", "Pendente")
-        scfg    = STATUS_CONFIG.get(status, STATUS_CONFIG["Pendente"])
-        pri     = acao.get("prioridade", "Média")
-        pri_cor = COR_VERMELHO if pri == "Alta" else COR_AMARELO if pri == "Média" else COR_VERDE
-
-        with st.expander(f"{scfg['emoji']} Ação {idx+1} — {acao.get('what', '')[:70]}  |  {pri}", expanded=edit_mode):
-
-            # Status + prioridade
-            col_s, col_p = st.columns([2, 1])
-            with col_s:
-                novo_status = st.selectbox(
-                    "Status",
-                    list(STATUS_CONFIG.keys()),
-                    index=list(STATUS_CONFIG.keys()).index(status),
-                    key=f"status_{plan_key}_{acao_id}",
-                )
-            with col_p:
-                nova_pri = st.selectbox(
-                    "Prioridade",
-                    ["Alta", "Média", "Baixa"],
-                    index=["Alta", "Média", "Baixa"].index(pri),
-                    key=f"pri_{plan_key}_{acao_id}",
-                )
-
-            # Campos 5W2H editáveis
-            novos_campos = {}
-            for label, campo in labels_5w2h:
-                novos_campos[campo] = st.text_area(
-                    label,
-                    value=acao.get(campo, ""),
-                    height=68,
-                    key=f"{campo}_{plan_key}_{acao_id}",
-                )
-
-            # Indicador e notas
-            novo_indicador = st.text_input(
-                "📊 Indicador de sucesso",
-                value=acao.get("indicador_sucesso", ""),
-                key=f"ind_{plan_key}_{acao_id}",
-            )
-            novas_notas = st.text_area(
-                "📝 Notas / observações",
-                value=acao.get("notas", ""),
-                height=60,
-                key=f"notas_{plan_key}_{acao_id}",
-            )
-
-            if novo_status == "Concluído" and status != "Concluído":
-                data_conclusao = datetime.now().strftime("%d/%m/%Y")
-            else:
-                data_conclusao = acao.get("data_conclusao", "")
-
-            # Botão salvar ação
-            if st.button(f"💾 Salvar alterações — Ação {idx+1}", key=f"save_{plan_key}_{acao_id}", type="primary"):
-                acao.update({
-                    "status": novo_status,
-                    "prioridade": nova_pri,
-                    "indicador_sucesso": novo_indicador,
-                    "notas": novas_notas,
-                    "data_conclusao": data_conclusao,
-                    **novos_campos,
-                })
-                saved_plans[plan_key] = plan
-                save_plans(saved_plans)
-                st.session_state.saved_plans = saved_plans
-                st.success("✅ Alterações salvas!")
-                st.rerun()
-
-    # Exportar plano como JSON
-    st.download_button(
-        "⬇️ Exportar plano (JSON)",
-        data=json.dumps(plan, ensure_ascii=False, indent=2),
-        file_name=f"plano_{plan.get('id', 'hse')}_{datetime.now().strftime('%Y%m%d')}.json",
-        mime="application/json",
-        key=f"export_{plan_key}",
-    )
+            st.markdown("<br>", unsafe_allow_html=True)
+            col_upd, col_del, _ = st.columns([2, 2, 5])
+            with col_upd:
+                if st.button("💾 Salvar alterações de status", key=f"update_plan_{idx}", use_container_width=True):
+                    # Update statuses from session state
+                    for i, acao in enumerate(plan["acoes"]):
+                        sk = f"saved_plan_{idx}_row{i}_status"
+                        if sk in st.session_state:
+                            acao["status"] = st.session_state[sk]
+                    st.session_state.action_plans[idx]["plan"] = plan
+                    st.success("✅ Status atualizado!")
+                    st.rerun()
+            with col_del:
+                if st.button("🗑️ Remover plano", key=f"del_plan_{idx}", use_container_width=True):
+                    st.session_state.action_plans.pop(idx)
+                    st.rerun()
 
 
 # ─────────────────────────────────────────────
-# SESSION STATE
-# ─────────────────────────────────────────────
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "saved_plans" not in st.session_state:
-    st.session_state.saved_plans = load_saved_plans()
-
-# ─────────────────────────────────────────────
-# SIDEBAR — filtros + planos salvos
+# SIDEBAR — filtros
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown(f"""
@@ -516,39 +609,51 @@ with st.sidebar:
     sel_cargo     = st.multiselect("Cargo", cargos_disp, default=cargos_disp, key="ai_cargo")
 
     st.markdown("---")
-
-    # Planos salvos na sidebar
-    saved_plans = st.session_state.saved_plans
-    if saved_plans:
-        st.markdown("### 📋 Planos salvos")
-        for pk, pl in saved_plans.items():
-            conc, _, tot = calc_progress(pl)
-            pct = int(conc / tot * 100) if tot else 0
-            cor_pct = COR_VERDE if pct == 100 else COR_AMARELO if pct > 0 else COR_CINZA
-            if st.button(
-                f"{'✅' if pct==100 else '📄'} {pl.get('titulo','Plano')[:30]}…  {pct}%",
-                key=f"sb_{pk}",
-                use_container_width=True,
-            ):
-                st.session_state.viewing_plan = pk
-                st.rerun()
-        st.markdown("---")
-
     if st.button("🗑️ Limpar conversa", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
 
+    st.markdown("---")
+    n_plans = len(st.session_state.action_plans)
+    plans_label = f"📋 Planos de Ação" + (f"  ({n_plans})" if n_plans else "")
+    col_tab1, col_tab2 = st.columns(2)
+    with col_tab1:
+        if st.button("💬 Chat", use_container_width=True,
+                     type="primary" if st.session_state.active_tab == "chat" else "secondary"):
+            st.session_state.active_tab = "chat"
+            st.rerun()
+    with col_tab2:
+        if st.button(plans_label, use_container_width=True,
+                     type="primary" if st.session_state.active_tab == "plans" else "secondary"):
+            st.session_state.active_tab = "plans"
+            st.rerun()
+
+    st.markdown("---")
     st.markdown(f"""
-    <div style="font-size:11px; color:{COR_MUTED}; line-height:1.8; margin-top:8px;">
+    <div style="font-size:11px; color:{COR_MUTED}; line-height:1.8;">
         <b>Modelo:</b> Llama 3.3 70B (Groq)<br>
         <b>Dados:</b> {len(base)} respondentes<br>
-        <b>Planos salvos:</b> {len(saved_plans)}<br>
-        <b>Padrão:</b> 5W2H
+        <b>Contexto:</b> dashboard completo (heatmap + PGR + questões)
     </div>
     """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "action_plans" not in st.session_state:
+    st.session_state.action_plans = []
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = "chat"
+if "editing_plan_idx" not in st.session_state:
+    st.session_state.editing_plan_idx = None
+if "plan_edit_state" not in st.session_state:
+    st.session_state.plan_edit_state = {}
+
+# ─────────────────────────────────────────────
 # CONTEXTO — build_context do analytics.py
+# aproveita TODAS as análises do dashboard
 # ─────────────────────────────────────────────
 contexto_atual, stats = build_context(
     base,
@@ -570,7 +675,7 @@ st.markdown(f"""
   <div>
     <h1 style="margin:0; font-size:22px;">Agente de Análise HSE-IT</h1>
     <p style="margin:4px 0 0 0; font-size:13px; color:{COR_MUTED};">
-        Especialista em Riscos Psicossociais · NR-1 · Planos 5W2H · Vivamente 360°
+        Especialista em Riscos Psicossociais · NR-1 · Vivamente 360°
         &nbsp;·&nbsp;
         <span style="color:{COR_TEXTO};">{n_f} respondentes</span>
         &nbsp;·&nbsp; NR médio: <span style="color:{COR_AMARELO if nr_f >= 5 else COR_VERDE};">{nr_f:.1f}</span>
@@ -581,264 +686,213 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# ABAS PRINCIPAIS
+# TAB ROUTING
 # ─────────────────────────────────────────────
-tab_chat, tab_planos = st.tabs(["💬 Chat com o Agente", "📋 Planos de Ação"])
+if st.session_state.active_tab == "plans":
+    render_plans_tab()
+    st.stop()
 
-# ══════════════════════════════════════════════
-# ABA 1: CHAT
-# ══════════════════════════════════════════════
-with tab_chat:
+# ─────────────────────────────────────────────
+# PERGUNTAS RÁPIDAS
+# ─────────────────────────────────────────────
+if not st.session_state.chat_history:
+    st.markdown(f'<div class="section-title">💡 Perguntas de partida</div>', unsafe_allow_html=True)
 
-    # Perguntas rápidas
-    if not st.session_state.chat_history:
-        st.markdown(f'<div class="section-title">💡 Perguntas de partida</div>', unsafe_allow_html=True)
+    quick_questions = [
+        ("🔴", "Quais são os principais alertas que preciso comunicar à liderança hoje?"),
+        ("📊", "Analise os setores mais críticos e o que está por trás desses números."),
+        ("🎯", "Gere um plano de ação prioritário para os próximos 90 dias."),
+        ("🔬", "Qual dimensão está mais comprometida e por que isso importa?"),
+        ("👥", "Que padrões você identifica nos cargos com maior risco?"),
+        ("📋", "O que o PGR precisa contemplar com base nessa análise?"),
+    ]
 
-        quick_questions = [
-            ("🔴", "Quais são os principais alertas que preciso comunicar à liderança hoje?"),
-            ("📊", "Analise os setores mais críticos e o que está por trás desses números."),
-            ("🎯", "Gere um plano de ação 5W2H prioritário para os próximos 90 dias."),
-            ("🔬", "Qual dimensão está mais comprometida e por que isso importa?"),
-            ("👥", "Que padrões você identifica nos cargos com maior risco?"),
-            ("📋", "O que o PGR precisa contemplar com base nessa análise?"),
-        ]
+    cols = st.columns(2)
+    for i, (emoji, q) in enumerate(quick_questions):
+        with cols[i % 2]:
+            if st.button(f"{emoji} {q}", key=f"quick_{i}", use_container_width=True):
+                st.session_state.selected_quick = q
+                st.rerun()
 
-        cols = st.columns(2)
-        for i, (emoji, q) in enumerate(quick_questions):
-            with cols[i % 2]:
-                if st.button(f"{emoji} {q}", key=f"quick_{i}", use_container_width=True):
-                    st.session_state.selected_quick = q
-                    st.rerun()
-
-    # Histórico do chat
-    for msg_idx, msg in enumerate(st.session_state.chat_history):
-        if msg["role"] == "user":
-            st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
-        else:
-            content = msg["content"]
-            if isinstance(content, dict) and "acoes" in content:
-                # É um plano 5W2H — renderiza compacto no chat
-                conc, and_, tot = calc_progress(content)
-                pct = int(conc / tot * 100) if tot else 0
+# ─────────────────────────────────────────────
+# HISTÓRICO DO CHAT
+# ─────────────────────────────────────────────
+for msg_idx, msg in enumerate(st.session_state.chat_history):
+    if msg["role"] == "user":
+        st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        content = msg["content"]
+        if isinstance(content, dict):
+            plan_key = f"chat_plan_{msg_idx}"
+            with st.container():
                 st.markdown(f"""
-                <div class="msg-agent">
-                🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong> — Plano 5W2H gerado<br><br>
-                <b style="color:{COR_ACCENT};">Problema:</b> {content.get('problema','')}<br>
-                <b style="color:{COR_ACCENT};">Objetivo:</b> {content.get('objetivo','')}<br>
-                <span style="font-size:12px; color:{COR_MUTED};">
-                    {tot} ações · {pct}% concluído · ID: {content.get('id','')}
-                </span>
-                </div>
+                <div style="background:{COR_CARD};border:1px solid {COR_BORDA};
+                     border-radius:4px 16px 16px 16px;padding:20px;margin:8px 10% 8px 0;">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+                        <span style="font-size:15px;">🤖</span>
+                        <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong>
+                        <span style="font-size:11px;color:{COR_MUTED};margin-left:4px;">· Plano de Ação gerado</span>
+                    </div>
                 """, unsafe_allow_html=True)
 
-                # Botão para salvar/ver o plano
-                plan_key = content.get("id", str(msg_idx))
-                col_salvar, col_ver = st.columns([1, 1])
-                with col_salvar:
-                    if plan_key not in st.session_state.saved_plans:
-                        if st.button("💾 Salvar este plano", key=f"savebtn_{msg_idx}"):
-                            st.session_state.saved_plans[plan_key] = content
-                            save_plans(st.session_state.saved_plans)
-                            st.success("Plano salvo!")
-                            st.rerun()
-                    else:
-                        st.success("✅ Plano já salvo")
-                with col_ver:
-                    if st.button("📋 Ver / editar plano completo", key=f"verbtn_{msg_idx}"):
-                        if plan_key not in st.session_state.saved_plans:
-                            st.session_state.saved_plans[plan_key] = content
-                            save_plans(st.session_state.saved_plans)
-                        st.session_state.viewing_plan = plan_key
-                        st.rerun()
-            else:
-                content_html = str(content).replace("\n\n", "<br><br>").replace("\n", "<br>")
-                content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
-                content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
-                st.markdown(f'''
-                <div class="msg-agent">
-                🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
-                {content_html}
-                </div>
-                ''', unsafe_allow_html=True)
+                render_5w2h_table_html(content, plan_key, editable=True)
 
-    # Input
-    st.markdown("---")
+                st.markdown("<br>", unsafe_allow_html=True)
+                col_save, col_info, _ = st.columns([2, 3, 4])
+                with col_save:
+                    if st.button("💾 Salvar Plano de Ação", key=f"save_{plan_key}", use_container_width=True, type="primary"):
+                        updated = collect_edited_plan(content, plan_key)
+                        st.session_state.action_plans.append({
+                            "plan": updated,
+                            "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                        })
+                        # Update chat history too
+                        st.session_state.chat_history[msg_idx]["content"] = updated
+                        st.success(f"✅ Plano salvo! Acesse em **Planos de Ação** na barra lateral.")
+                with col_info:
+                    st.markdown(f"""
+                    <div style="font-size:11px;color:{COR_MUTED};padding-top:8px;">
+                        ✏️ Edite os campos diretamente antes de salvar
+                    </div>""", unsafe_allow_html=True)
 
-    if hasattr(st.session_state, "selected_quick"):
-        user_input = st.session_state.selected_quick
-        del st.session_state.selected_quick
-    else:
-        user_input = None
+                st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
+            content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
+            content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
+            st.markdown(f'''
+            <div class="msg-agent">
+            🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
+            {content_html}
+            </div>
+            ''', unsafe_allow_html=True)
 
-    col_input, col_btn = st.columns([5, 1])
-    with col_input:
-        typed_input = st.text_area(
-            "Sua pergunta",
-            placeholder="Ex: Gere um plano 5W2H para o setor de Operações",
-            height=80,
-            key="user_input_area",
-            label_visibility="collapsed",
-        )
-    with col_btn:
-        send_btn = st.button("Enviar →", use_container_width=True, type="primary")
+# ─────────────────────────────────────────────
+# INPUT DO USUÁRIO
+# ─────────────────────────────────────────────
+st.markdown("---")
 
-    if typed_input and send_btn:
-        user_input = typed_input
+if hasattr(st.session_state, "selected_quick"):
+    user_input = st.session_state.selected_quick
+    del st.session_state.selected_quick
+else:
+    user_input = None
 
-    # Processar mensagem
-    if user_input and user_input.strip():
-        st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
+col_input, col_btn = st.columns([5, 1])
+with col_input:
+    typed_input = st.text_area(
+        "Sua pergunta",
+        placeholder="Ex: Quais setores precisam de intervenção urgente?",
+        height=80,
+        key="user_input_area",
+        label_visibility="collapsed",
+    )
+with col_btn:
+    send_btn = st.button("Enviar →", use_container_width=True, type="primary")
 
-        context_message = f"""CONTEXTO COMPLETO DO DASHBOARD HSE-IT:
+if typed_input and send_btn:
+    user_input = typed_input
+
+# ─────────────────────────────────────────────
+# PROCESSAR MENSAGEM
+# ─────────────────────────────────────────────
+if user_input and user_input.strip():
+    st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
+
+    # Monta histórico para API (injeta contexto rico na primeira mensagem)
+    context_message = f"""CONTEXTO COMPLETO DO DASHBOARD HSE-IT (use estes dados para embasar o plano):
 
 {contexto_atual}
 
 ---
-Gere o plano de ação em padrão 5W2H conforme o schema definido."""
+Gere o plano de ação em JSON conforme o schema definido."""
 
-        api_messages = []
-        last_user_idx = max(i for i, m in enumerate(st.session_state.chat_history) if m["role"] == "user")
-        for i, msg in enumerate(st.session_state.chat_history):
-            if msg["role"] == "user" and i == last_user_idx:
-                api_messages.append({
-                    "role": "user",
-                    "content": f"{context_message}\n\nPergunta: {msg['content']}"
-                })
-            else:
-                content = msg["content"]
-                if isinstance(content, dict):
-                    content = json.dumps(content, ensure_ascii=False)
-                api_messages.append({"role": msg["role"], "content": content})
+    api_messages = []
+    last_user_idx = max(i for i, m in enumerate(st.session_state.chat_history) if m["role"] == "user")
+    for i, msg in enumerate(st.session_state.chat_history):
+        if msg["role"] == "user" and i == last_user_idx:
+            # Sempre injeta o contexto atualizado na última pergunta do usuário
+            api_messages.append({
+                "role": "user",
+                "content": f"{context_message}\n\nPergunta: {msg['content']}"
+            })
+        else:
+            content = msg["content"]
+            # Groq exige string em content; se for dict (plano serializado), converte para JSON
+            if isinstance(content, dict):
+                content = json.dumps(content, ensure_ascii=False)
+            api_messages.append({"role": msg["role"], "content": content})
 
-        with st.spinner("🧠 Gerando plano 5W2H com base nos dados do dashboard..."):
-            try:
-                raw = call_groq(api_messages, GROQ_API_KEY)
-                plan = validate_and_fix_plan(raw, api_messages, GROQ_API_KEY)
-                st.session_state.chat_history.append({"role": "assistant", "content": plan})
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ Erro ao consultar o agente: {str(e)}")
-                st.session_state.chat_history.pop()
+    with st.spinner("🧠 Analisando dados do dashboard..."):
+        try:
+            raw = call_groq(api_messages, GROQ_API_KEY)
+            plan = validate_and_fix_plan(raw, api_messages, GROQ_API_KEY)
+            st.session_state.chat_history.append({"role": "assistant", "content": plan})
+            st.rerun()
+        except Exception as e:
+            st.error(f"❌ Erro ao consultar o agente: {str(e)}")
+            st.session_state.chat_history.pop()
 
-    # Resumo automático (quando não há chat)
-    if not st.session_state.chat_history and stats:
-        st.markdown(f'<div class="section-title">📊 Resumo automático dos dados</div>', unsafe_allow_html=True)
+# ─────────────────────────────────────────────
+# RESUMO AUTOMÁTICO (quando não há chat ainda)
+# ─────────────────────────────────────────────
+if not st.session_state.chat_history and stats:
+    st.markdown(f'<div class="section-title">📊 Resumo automático dos dados</div>', unsafe_allow_html=True)
 
-        dist   = stats.get("distribuicao_risco", {})
-        n_tot  = max(stats.get("n_respondentes", 1), 1)
-        scores = stats.get("scores_por_dimensao", {})
-        class_ = stats.get("classificacao_por_dimensao", {})
+    dist   = stats.get("distribuicao_risco", {})
+    n_tot  = max(stats.get("n_respondentes", 1), 1)
+    scores = stats.get("scores_por_dimensao", {})
+    class_ = stats.get("classificacao_por_dimensao", {})
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Distribuição de risco**")
-            for nivel, cor in [("Crítico", COR_VERMELHO), ("Importante", COR_LARANJA),
-                               ("Moderado", COR_AMARELO), ("Aceitável", COR_VERDE)]:
-                cnt = dist.get(nivel, 0)
-                pct = cnt / n_tot * 100
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid {COR_BORDA};">
-                    <span style="color:{COR_MUTED};">{nivel}</span>
-                    <span><b style="color:{cor};">{pct:.1f}%</b> <span style="color:{COR_MUTED}; font-size:12px;">({cnt})</span></span>
-                </div>
-                """, unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
 
-        with col2:
-            st.markdown("**Scores por dimensão**")
-            for dim_label, score in scores.items():
-                cls = class_.get(dim_label, "")
-                is_neg = dim_label in ["Demandas", "Relacionamentos"]
-                cor = (COR_VERMELHO if (score >= 3 if is_neg else score <= 1.5)
-                       else COR_AMARELO if (score >= 2 if is_neg else score <= 2.5)
-                       else COR_VERDE)
-                st.markdown(f"""
-                <div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid {COR_BORDA};">
-                    <span style="color:{COR_MUTED}; font-size:13px;">{dim_label}</span>
-                    <span><b style="color:{cor};">{score:.2f}</b>
-                    <span style="color:{COR_MUTED}; font-size:11px;"> {cls}</span></span>
-                </div>
-                """, unsafe_allow_html=True)
+    with col1:
+        st.markdown("**Distribuição de risco**")
+        for nivel, cor in [("Crítico", COR_VERMELHO), ("Importante", COR_LARANJA),
+                           ("Moderado", COR_AMARELO), ("Aceitável", COR_VERDE)]:
+            cnt = dist.get(nivel, 0)
+            pct = cnt / n_tot * 100
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid {COR_BORDA};">
+                <span style="color:{COR_MUTED};">{nivel}</span>
+                <span><b style="color:{cor};">{pct:.1f}%</b> <span style="color:{COR_MUTED}; font-size:12px;">({cnt})</span></span>
+            </div>
+            """, unsafe_allow_html=True)
 
-        top_s = stats.get("top_setores", [])
-        if top_s:
-            st.markdown(f'<div class="section-title">🔥 Setores mais críticos</div>', unsafe_allow_html=True)
-            for s in top_s[:3]:
-                nr  = s.get("NR_geral", 0)
-                cls = "critico" if nr >= 13 else "alerta" if nr >= 9 else "ok"
-                dims_crit = s.get("dimensoes_criticas_ou_importantes", {})
-                dims_txt  = "  ·  " + ", ".join(f"{k}={v}" for k, v in list(dims_crit.items())[:3]) if dims_crit else ""
-                st.markdown(f"""
-                <div class="insight-card insight-{cls}">
-                    <b>{s.get('Setor', s.get('setor', '—'))}</b>
-                    &nbsp;&nbsp;<span style="color:{COR_MUTED}; font-size:12px;">{s.get('n_colaboradores', 0)} pessoas</span>
-                    &nbsp;&nbsp;NR: <b>{nr:.2f}</b>
-                    &nbsp;&nbsp;{s.get('perc_risco_alto', 0)*100:.0f}% em risco alto
-                    <span style="color:{COR_MUTED}; font-size:11px;">{dims_txt}</span>
-                </div>
-                """, unsafe_allow_html=True)
+    with col2:
+        st.markdown("**Scores por dimensão com classificação**")
+        for dim_label, score in scores.items():
+            cls = class_.get(dim_label, "")
+            is_neg = dim_label in ["Demandas", "Relacionamentos"]
+            cor = (COR_VERMELHO if (score >= 3 if is_neg else score <= 1.5)
+                   else COR_AMARELO if (score >= 2 if is_neg else score <= 2.5)
+                   else COR_VERDE)
+            st.markdown(f"""
+            <div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid {COR_BORDA};">
+                <span style="color:{COR_MUTED}; font-size:13px;">{dim_label}</span>
+                <span><b style="color:{cor};">{score:.2f}</b>
+                <span style="color:{COR_MUTED}; font-size:11px;"> {cls}</span></span>
+            </div>
+            """, unsafe_allow_html=True)
 
-# ══════════════════════════════════════════════
-# ABA 2: PLANOS DE AÇÃO
-# ══════════════════════════════════════════════
-with tab_planos:
-    saved_plans = st.session_state.saved_plans
-
-    # Se veio de um link da sidebar ou botão do chat
-    viewing_key = st.session_state.get("viewing_plan", None)
-
-    if not saved_plans:
-        st.info("💡 Nenhum plano salvo ainda. Peça ao agente para gerar um plano de ação e clique em 'Salvar este plano'.")
-    else:
-        # Visão geral — todos os planos
-        st.markdown(f'<div class="section-title">📊 Visão geral dos planos</div>', unsafe_allow_html=True)
-
-        total_acoes_g    = sum(len(p.get("acoes", [])) for p in saved_plans.values())
-        total_concluidas = sum(calc_progress(p)[0] for p in saved_plans.values())
-        total_andamento  = sum(calc_progress(p)[1] for p in saved_plans.values())
-        pct_global       = int(total_concluidas / total_acoes_g * 100) if total_acoes_g else 0
-
-        col_g1, col_g2, col_g3, col_g4 = st.columns(4)
-        col_g1.metric("Planos ativos", len(saved_plans))
-        col_g2.metric("Ações totais", total_acoes_g)
-        col_g3.metric("Ações concluídas", total_concluidas)
-        col_g4.metric("Progresso global", f"{pct_global}%")
-
-        render_progress_bar(total_concluidas, total_andamento, total_acoes_g)
-
-        st.markdown("---")
-
-        # Seletor de plano
-        plan_options = {pk: f"{'✅' if calc_progress(pl)[0]==len(pl.get('acoes',[])) and pl.get('acoes') else '📄'} {pl.get('titulo','Plano')[:50]} — {pl.get('criado_em','')}"
-                        for pk, pl in saved_plans.items()}
-
-        # Pré-seleciona o plano se veio de um botão
-        default_idx = 0
-        if viewing_key and viewing_key in list(plan_options.keys()):
-            default_idx = list(plan_options.keys()).index(viewing_key)
-
-        selected_pk = st.selectbox(
-            "Selecione o plano",
-            list(plan_options.keys()),
-            format_func=lambda k: plan_options[k],
-            index=default_idx,
-            key="plan_selector",
-        )
-
-        if "viewing_plan" in st.session_state:
-            del st.session_state.viewing_plan
-
-        if selected_pk:
-            plan = saved_plans[selected_pk]
-
-            col_del, _ = st.columns([1, 4])
-            with col_del:
-                if st.button("🗑️ Excluir este plano", key="del_plan"):
-                    del st.session_state.saved_plans[selected_pk]
-                    save_plans(st.session_state.saved_plans)
-                    st.rerun()
-
-            st.markdown("---")
-            render_plan_card(plan, selected_pk, edit_mode=True)
+    # Top setores críticos (usando dados ricos do analytics.py)
+    top_s = stats.get("top_setores", [])
+    if top_s:
+        st.markdown(f'<div class="section-title">🔥 Setores mais críticos</div>', unsafe_allow_html=True)
+        for s in top_s[:3]:
+            nr  = s.get("NR_geral", 0)
+            cls = "critico" if nr >= 13 else "alerta" if nr >= 9 else "ok"
+            dims_crit = s.get("dimensoes_criticas_ou_importantes", {})
+            dims_txt  = "  ·  " + ", ".join(f"{k}={v}" for k, v in list(dims_crit.items())[:3]) if dims_crit else ""
+            st.markdown(f"""
+            <div class="insight-card insight-{cls}">
+                <b>{s.get('Setor', s.get('setor', '—'))}</b>
+                &nbsp;&nbsp;<span style="color:{COR_MUTED}; font-size:12px;">{s.get('n_colaboradores', 0)} pessoas</span>
+                &nbsp;&nbsp;NR: <b>{nr:.2f}</b>
+                &nbsp;&nbsp;{s.get('perc_risco_alto', 0)*100:.0f}% em risco alto
+                <span style="color:{COR_MUTED}; font-size:11px;">{dims_txt}</span>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # FOOTER
@@ -847,10 +901,10 @@ st.markdown(f"""
 <div style="margin-top:2rem; padding-top:1rem; border-top:1px solid {COR_BORDA};
      display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
   <span style="font-size:11px; color:{COR_MUTED};">
-    🤖 Agente HSE-IT · Groq + Llama 3.3 · Padrão 5W2H · Vivamente 360°
+    🤖 Agente HSE-IT · Powered by Groq + Llama 3.3 · Vivamente 360°
   </span>
   <span style="font-size:11px; color:{COR_MUTED}; font-family:'DM Mono', monospace;">
-    {datetime.now().strftime("%d/%m/%Y")} · {n_f} respondentes · {len(st.session_state.saved_plans)} planos salvos
+    {datetime.now().strftime("%d/%m/%Y")} · {n_f} respondentes · contexto: dashboard completo
   </span>
 </div>
 """, unsafe_allow_html=True)
