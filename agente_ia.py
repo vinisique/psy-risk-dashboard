@@ -2,6 +2,10 @@
 🧠 Agente de IA — HSE-IT · Vivamente 360°
 Analisa os dados de riscos psicossociais e gera insights acionáveis.
 Tecnologia: Groq API (llama-3.3-70b-versatile) + Streamlit
+
+ATUALIZAÇÃO: agora usa analytics.py como módulo compartilhado,
+aproveitando TODAS as análises do dashboard (heatmap, PGR, matriz
+de dimensões por setor/cargo, questões críticas, etc.).
 """
 
 import streamlit as st
@@ -11,6 +15,14 @@ import os
 import re
 import requests
 from datetime import datetime
+
+# ── Módulo compartilhado com o dashboard ──────────────────────────────────────
+from analytics import (
+    load_all_data,
+    build_context,          # aplica filtros + roda analytics completo
+    DIMENSOES, DIMENSOES_LABEL, DIM_NEGATIVAS,
+    NIVEIS_ORDEM, NIVEIS_GERAL_ORDEM,
+)
 
 # ─────────────────────────────────────────────
 # CONFIG DA PÁGINA
@@ -23,7 +35,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# CHAVE API — lida do secrets (nunca exposta ao usuário)
+# CHAVE API
 # ─────────────────────────────────────────────
 try:
     GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -32,7 +44,7 @@ except KeyError:
     st.stop()
 
 # ─────────────────────────────────────────────
-# PALETA (mantida igual ao dashboard principal)
+# PALETA
 # ─────────────────────────────────────────────
 COR_VERDE    = "#2D9E75"
 COR_AMARELO  = "#F5A623"
@@ -46,20 +58,6 @@ COR_TEXTO    = "#E8EAF0"
 COR_MUTED    = "#6B7280"
 COR_ACCENT   = "#4F8EF7"
 COR_PURPLE   = "#A78BFA"
-
-DIMENSOES = [
-    "Demandas", "Controle", "Apoio_Chefia",
-    "Apoio_Colegas", "Relacionamentos", "Cargo", "Mudanca"
-]
-DIMENSOES_LABEL = {
-    "Demandas": "Demandas",
-    "Controle": "Controle",
-    "Apoio_Chefia": "Apoio da Chefia",
-    "Apoio_Colegas": "Apoio dos Colegas",
-    "Relacionamentos": "Relacionamentos",
-    "Cargo": "Cargo / Função",
-    "Mudanca": "Comunicação e Mudanças",
-}
 
 # ─────────────────────────────────────────────
 # CSS
@@ -82,7 +80,6 @@ html, body, [class*="css"] {{
 
 .block-container {{ padding: 1.5rem 2rem 3rem; }}
 
-/* Chat bubbles */
 .msg-user {{
     background: linear-gradient(135deg, #1e3a5f, #1a2d4a);
     border: 1px solid {COR_ACCENT}33;
@@ -106,7 +103,6 @@ html, body, [class*="css"] {{
 .msg-agent strong {{ color: {COR_ACCENT}; }}
 .msg-agent em {{ color: {COR_MUTED}; }}
 
-/* Insight cards */
 .insight-card {{
     background: {COR_CARD};
     border-left: 3px solid {COR_ACCENT};
@@ -119,18 +115,6 @@ html, body, [class*="css"] {{
 .insight-alerta  {{ border-left-color: {COR_AMARELO}; }}
 .insight-ok      {{ border-left-color: {COR_VERDE}; }}
 
-.chip {{
-    display: inline-block;
-    padding: 3px 10px;
-    border-radius: 100px;
-    font-size: 11px;
-    font-weight: 600;
-    margin: 2px;
-}}
-.chip-critico  {{ background: rgba(214,59,59,0.2);  color: {COR_VERMELHO}; }}
-.chip-moderado {{ background: rgba(245,166,35,0.2); color: {COR_AMARELO}; }}
-.chip-ok       {{ background: rgba(45,158,117,0.2); color: {COR_VERDE}; }}
-
 .section-title {{
     font-size: 12px; font-weight: 600; color: {COR_MUTED};
     text-transform: uppercase; letter-spacing: .1em;
@@ -138,32 +122,6 @@ html, body, [class*="css"] {{
     padding-bottom: 6px;
     border-bottom: 1px solid {COR_BORDA};
 }}
-
-.thinking-badge {{
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(79,142,247,0.1);
-    border: 1px solid {COR_ACCENT}44;
-    border-radius: 20px;
-    padding: 4px 12px;
-    font-size: 12px;
-    color: {COR_ACCENT};
-    margin: 8px 0;
-}}
-
-.quick-btn {{
-    background: {COR_CARD};
-    border: 1px solid {COR_BORDA};
-    border-radius: 8px;
-    padding: 8px 14px;
-    font-size: 12px;
-    color: {COR_TEXTO};
-    cursor: pointer;
-    transition: all 0.2s;
-    width: 100%;
-    text-align: left;
-    margin: 3px 0;
-}}
-.quick-btn:hover {{ border-color: {COR_ACCENT}; color: {COR_ACCENT}; }}
 
 .agent-header {{
     background: linear-gradient(135deg, #1A1D27 0%, #0F1117 100%);
@@ -186,141 +144,17 @@ html, body, [class*="css"] {{
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# CARGA DE DADOS
+# CARGA DE DADOS (via analytics.py)
 # ─────────────────────────────────────────────
 @st.cache_data
-def load_all_data():
-    base     = pd.read_parquet("base.parquet")
-    setor    = pd.read_parquet("setor.parquet")
-    cargo    = pd.read_parquet("cargo.parquet")
-    unidade  = pd.read_parquet("unidade.parquet") if os.path.exists("unidade.parquet") else None
-    return base, setor, cargo, unidade
+def _load():
+    return load_all_data()
 
-base, setor, cargo, unidade = load_all_data()
+base, setor, cargo, unidade = _load()
 
 # ─────────────────────────────────────────────
-# MONTAGEM DO CONTEXTO ANALÍTICO
+# SYSTEM PROMPT
 # ─────────────────────────────────────────────
-def build_context(filtro_empresa=None, filtro_setor=None, filtro_cargo=None):
-    """Gera um resumo estruturado dos dados para alimentar o agente."""
-    
-    base_f = base.copy()
-    if filtro_empresa:
-        base_f = base_f[base_f["Empresa"].isin(filtro_empresa)]
-    if filtro_setor:
-        base_f = base_f[base_f["Informe seu setor / departamento."].isin(filtro_setor)]
-    if filtro_cargo:
-        base_f = base_f[base_f["Informe seu cargo"].isin(filtro_cargo)]
-
-    n = len(base_f)
-    if n == 0:
-        return "Nenhum respondente encontrado com os filtros selecionados.", {}
-
-    dist_risco = base_f["risco_geral"].value_counts().to_dict()
-    nr_medio   = base_f["NR_geral"].mean()
-    igrp_medio = base_f["IGRP"].mean()
-
-    # Scores por dimensão
-    scores_dim = {}
-    for d in DIMENSOES:
-        col = f"score_{d}"
-        if col in base_f.columns:
-            scores_dim[DIMENSOES_LABEL[d]] = round(float(base_f[col].mean()), 3)
-
-    # Top setores críticos
-    setor_f = base_f.groupby("Informe seu setor / departamento.").agg(
-        n=("NR_geral", "count"),
-        nr_medio=("NR_geral", "mean"),
-        perc_critico=("risco_geral", lambda x: (x == "Crítico").mean()),
-        perc_alto=("risco_geral", lambda x: x.isin(["Crítico","Importante"]).mean()),
-    ).reset_index().rename(columns={"Informe seu setor / departamento.": "setor"})
-    setor_f = setor_f.sort_values("nr_medio", ascending=False)
-    top_setores = setor_f.head(5)[["setor","n","nr_medio","perc_alto"]].to_dict("records")
-
-    # Top cargos
-    cargo_f = base_f.groupby("Informe seu cargo").agg(
-        n=("NR_geral", "count"),
-        nr_medio=("NR_geral", "mean"),
-        perc_alto=("risco_geral", lambda x: x.isin(["Crítico","Importante"]).mean()),
-    ).reset_index().rename(columns={"Informe seu cargo": "cargo"})
-    cargo_f = cargo_f.sort_values("nr_medio", ascending=False)
-    top_cargos = cargo_f.head(5)[["cargo","n","nr_medio","perc_alto"]].to_dict("records")
-
-    # Empresas
-    emp_f = base_f.groupby("Empresa").agg(
-        n=("NR_geral","count"),
-        nr_medio=("NR_geral","mean"),
-        perc_alto=("risco_geral", lambda x: x.isin(["Crítico","Importante"]).mean()),
-    ).reset_index()
-
-    # Questões mais críticas
-    questoes_raw = [c for c in base_f.columns if not any([
-        c in ["Empresa","Informe sua unidade","Informe seu setor / departamento.","Informe seu cargo",
-              "IGRP","NR_geral","risco_geral","qtd_dimensoes_alto"],
-        c.startswith("score_"), c.startswith("NR_"), c.startswith("class_"),
-        c.startswith("P_"), c.startswith("S_")
-    ])]
-    
-    questoes_criticas = []
-    for q in questoes_raw[:35]:
-        media = base_f[q].mean()
-        questoes_criticas.append({"questao": q[:80], "score": round(float(media), 2)})
-    questoes_criticas.sort(key=lambda x: x["score"], reverse=True)
-
-    stats = {
-        "n_respondentes": n,
-        "nr_medio": round(float(nr_medio), 2),
-        "igrp_medio": round(float(igrp_medio), 3),
-        "distribuicao_risco": dist_risco,
-        "scores_por_dimensao": scores_dim,
-        "top_setores_criticos": top_setores,
-        "top_cargos_criticos": top_cargos,
-        "empresas": emp_f.to_dict("records"),
-        "questoes_mais_criticas": questoes_criticas[:10],
-    }
-
-    perc_alto = (dist_risco.get("Crítico",0) + dist_risco.get("Importante",0)) / n * 100
-    perc_critico = dist_risco.get("Crítico",0) / n * 100
-
-    contexto = f"""
-# CONTEXTO — DASHBOARD HSE-IT (Riscos Psicossociais / NR-1)
-## Visão Geral da Amostra
-- Respondentes no filtro: {n}
-- NR Geral médio: {nr_medio:.2f} (escala 1–16; ≥13 = Crítico)
-- IGRP médio: {igrp_medio:.3f} (escala 0–4)
-- Em risco Alto/Crítico: {perc_alto:.1f}%
-- Em risco Crítico: {perc_critico:.1f}%
-
-## Distribuição por Nível de Risco
-{json.dumps(dist_risco, ensure_ascii=False, indent=2)}
-
-## Scores Médios por Dimensão (0–4)
-Dimensões NEGATIVAS (maior score = pior): Demandas, Relacionamentos
-Dimensões POSITIVAS (menor score = pior): Controle, Apoio Chefia, Apoio Colegas, Cargo, Comunicação
-{json.dumps(scores_dim, ensure_ascii=False, indent=2)}
-
-## Top 5 Setores com Maior NR (mais críticos)
-{json.dumps(top_setores, ensure_ascii=False, indent=2)}
-
-## Top 5 Cargos com Maior NR (mais críticos)
-{json.dumps(top_cargos, ensure_ascii=False, indent=2)}
-
-## Empresas
-{json.dumps(emp_f.to_dict("records"), ensure_ascii=False, indent=2)}
-
-## 10 Questões com Score Mais Preocupante
-(Demandas: score alto = ruim | Outras: score baixo = ruim)
-{json.dumps(questoes_criticas[:10], ensure_ascii=False, indent=2)}
-
----
-Escalas de Referência:
-- NR Geral: Aceitável (≤4) | Moderado (5–8) | Importante (9–12) | Crítico (≥13)
-- Score Dimensão 0–4: varia se positivo ou negativo
-""".strip()
-
-    return contexto, stats
-
-
 SYSTEM_PROMPT = """Você é o Especialista em Planos de Ação HSE-IT — um agente que gera exclusivamente planos de ação estruturados para riscos psicossociais (NR-1).
 
 REGRAS OBRIGATÓRIAS (nunca quebre):
@@ -331,6 +165,8 @@ REGRAS OBRIGATÓRIAS (nunca quebre):
 - Prioridade: "Alta", "Média" ou "Baixa".
 - Prazo: formato legível (ex: "Próximos 15 dias", "Até 30/06/2026", "90 dias").
 - Indicador de sucesso: deve ser mensurável (número, %, taxa, score, etc.).
+- Aproveite ao máximo as informações do contexto: matriz de risco por setor × dimensão,
+  PGR por setor, questões críticas, NR por cargo e unidade.
 
 SCHEMA OBRIGATÓRIO:
 {
@@ -347,198 +183,118 @@ SCHEMA OBRIGATÓRIO:
   ]
 }
 
-Abaixo estão 4 exemplos de saída CORRETA (use-os como padrão exato de estrutura e tom):
-{
-  "problema": "Demandas excessivas (score médio 3.41/4) e NR geral elevado (12.8) nos setores de Operações e Atendimento",
-  "objetivo": "Reduzir o score de Demandas em pelo menos 1,0 ponto e o NR geral para abaixo de 9,0 em 90 dias",
-  "acoes": [
-    {
-      "descricao": "Realizar mapeamento de carga horária e redistribuição de tarefas nas equipes com sobrecarga",
-      "responsavel": "Gestores de Operações e RH",
-      "prazo": "Próximos 30 dias",
-      "prioridade": "Alta",
-      "indicador_sucesso": "Redução de 25% no número de colaboradores reportando sobrecarga (reavaliação HSE-IT)"
-    },
-    {
-      "descricao": "Implantar pausas ativas padronizadas (10 min a cada 2h) com monitoramento via checklist",
-      "responsavel": "Equipe HSE + Liderança direta",
-      "prazo": "15 dias",
-      "prioridade": "Alta",
-      "indicador_sucesso": "Adesão ≥ 85% das equipes (relatório mensal)"
-    }
-  ]
-}
-{
-  "problema": "Baixo Controle (score 1.2/4) e alto risco crítico (28%) no cargo de Analista Administrativo",
-  "objetivo": "Aumentar o score de Controle para ≥ 2.8 e reduzir o percentual de risco crítico para < 10%",
-  "acoes": [
-    {
-      "descricao": "Revisar e ampliar autonomia decisória em processos rotineiros (ex: aprovação de pequenos valores)",
-      "responsavel": "Gestores diretos + RH",
-      "prazo": "45 dias",
-      "prioridade": "Alta",
-      "indicador_sucesso": "Aumento de 1,5 ponto no score de Controle na próxima medição"
-    }
-  ]
-}
-{
-  "problema": "Relacionamentos com score 3.05/4 e suporte da chefia baixo (1.8/4) na unidade São Paulo",
-  "objetivo": "Melhorar o clima de relacionamento e apoio hierárquico, reduzindo o NR médio em 3 pontos",
-  "acoes": [
-    {
-      "descricao": "Realizar workshops de comunicação não-violenta e feedback construtivo para todas as chefias",
-      "responsavel": "RH + Consultoria externa especializada",
-      "prazo": "Próximos 60 dias",
-      "prioridade": "Média",
-      "indicador_sucesso": "Melhoria de ≥ 0.8 ponto nos scores de Relacionamentos e Apoio_Chefia"
-    },
-    {
-      "descricao": "Implantar canal anônimo de escuta mensal (pesquisa rápida + ação em 48h)",
-      "responsavel": "Equipe HSE",
-      "prazo": "Imediato",
-      "prioridade": "Alta",
-      "indicador_sucesso": "Taxa de participação ≥ 70% e resolução de 80% das demandas levantadas"
-    }
-  ]
-}
-{
-  "problema": "Mudança organizacional mal comunicada gerando alto risco em Comunicação e Mudanças (score 1.4/4)",
-  "objetivo": "Garantir clareza e engajamento durante o processo de mudança, zerando o risco crítico relacionado à comunicação",
-  "acoes": [
-    {
-      "descricao": "Criar e executar plano de comunicação em cascata com town halls semanais e FAQ atualizado",
-      "responsavel": "Diretoria + Comunicação Interna",
-      "prazo": "Próximos 90 dias",
-      "prioridade": "Alta",
-      "indicador_sucesso": "Score de Mudanca ≥ 3.0 e redução de 50% nas menções negativas sobre mudança"
-    }
-  ]
-}
+Exemplos de saída CORRETA:
+{"problema":"Demandas excessivas (score 3.41/4) e NR geral elevado (12.8) em Operações","objetivo":"Reduzir score de Demandas em 1.0 ponto e NR geral abaixo de 9.0 em 90 dias","acoes":[{"descricao":"Mapear carga horária e redistribuir tarefas nas equipes sobrecarregadas","responsavel":"Gestores de Operações e RH","prazo":"30 dias","prioridade":"Alta","indicador_sucesso":"Redução de 25% nos colaboradores reportando sobrecarga"}]}
+{"problema":"Baixo Controle (score 1.2/4) e alto risco crítico (28%) nos Analistas Administrativos","objetivo":"Aumentar score de Controle para ≥2.8 e reduzir risco crítico para <10%","acoes":[{"descricao":"Ampliar autonomia decisória em processos rotineiros","responsavel":"Gestores diretos + RH","prazo":"45 dias","prioridade":"Alta","indicador_sucesso":"Aumento de 1.5 ponto no score de Controle na próxima medição"}]}
 
-Agora, usando o contexto de dados HSE-IT fornecido pelo usuário, gere o plano de ação no formato JSON exatamente como nos exemplos.
+Agora, com base no contexto completo do dashboard HSE-IT fornecido (que inclui a matriz de risco por setor × dimensão, PGR, questões críticas e NR por cargo), gere o plano de ação mais preciso e acionável possível.
 """
 
-def validate_and_fix_plan(raw_response: str, max_retries=3) -> dict:
-    for attempt in range(max_retries):
+# ─────────────────────────────────────────────
+# FUNÇÕES
+# ─────────────────────────────────────────────
+def validate_and_fix_plan(raw_response: str, max_retries: int = 3) -> dict:
+    for _ in range(max_retries):
         try:
             json_str = re.search(r'\{.*\}', raw_response, re.DOTALL).group(0)
             plan = json.loads(json_str)
-
             required = ["problema", "objetivo", "acoes"]
             if not all(k in plan for k in required):
                 raise ValueError("Campos obrigatórios ausentes")
-
             for acao in plan["acoes"]:
                 if not all(k in acao for k in ["descricao", "responsavel", "prazo", "prioridade", "indicador_sucesso"]):
                     raise ValueError("Ação incompleta")
-
             return plan
         except Exception:
             continue
+    return {"problema": "Erro na geração", "objetivo": "Corrigir output", "acoes": []}
 
-    return {
-        "problema": "Erro na geração",
-        "objetivo": "Corrigir output",
-        "acoes": []
-    }
-# ─────────────────────────────────────────────
-# CHAMADA À API GROQ  ← ÚNICO BLOCO ALTERADO
-# ─────────────────────────────────────────────
+
 def call_groq(messages: list, api_key: str) -> str:
-    """Chama a API da Groq (compatível com OpenAI Chat Completions)."""
-
-    # A Groq não tem campo "system" separado — o system prompt vai
-    # como primeira mensagem com role="system" dentro do array messages.
     groq_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "model": "llama-3.3-70b-versatile",   # modelo recomendado na Groq
-        "max_tokens": 2048,
-        "messages": groq_messages,
-        "temperature": 0.2,
-        "response_format": {"type": "json_object"}
-    }
     resp = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
-        headers=headers,
-        json=payload,
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json={
+            "model": "llama-3.3-70b-versatile",
+            "max_tokens": 2048,
+            "messages": groq_messages,
+            "temperature": 0.2,
+            "response_format": {"type": "json_object"},
+        },
         timeout=60,
     )
     if resp.status_code != 200:
         try:
-            error_detail = resp.json().get("error", {}).get("message", resp.text)
+            err = resp.json().get("error", {}).get("message", resp.text)
         except Exception:
-            error_detail = resp.text
-        raise Exception(f"Erro API Groq ({resp.status_code}): {error_detail}")
-
-    data = resp.json()
-    return data["choices"][0]["message"]["content"]
+            err = resp.text
+        raise Exception(f"Erro API Groq ({resp.status_code}): {err}")
+    return resp.json()["choices"][0]["message"]["content"]
 
 
 # ─────────────────────────────────────────────
-# SIDEBAR
+# SIDEBAR — filtros
 # ─────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-        <div style="text-align:center; padding: 25px 0 15px 0; border-bottom: 1px solid #2A2D3E;">
-            <h2 style="margin:0; font-size:22px; color:#4F8EF7;">🤖 Agente HSE-IT</h2>
-            <p style="margin:4px 0 0 0; font-size:12px; color:#8B8FA8;">
+    st.markdown(f"""
+        <div style="text-align:center; padding:25px 0 15px 0; border-bottom:1px solid {COR_BORDA};">
+            <h2 style="margin:0; font-size:22px; color:{COR_ACCENT};">🤖 Agente HSE-IT</h2>
+            <p style="margin:4px 0 0 0; font-size:12px; color:{COR_MUTED};">
                 IA · Vivamente 360° · NR-1
             </p>
         </div>
     """, unsafe_allow_html=True)
-
     st.markdown("---")
-    
-    # Filtros de contexto
     st.markdown("### 🔍 Contexto da análise")
-    
+
     empresas_disp = sorted(base["Empresa"].dropna().unique())
-    sel_empresa = st.multiselect("Empresa", empresas_disp, default=empresas_disp, key="ai_empresa")
+    sel_empresa   = st.multiselect("Empresa", empresas_disp, default=empresas_disp, key="ai_empresa")
 
-    setores_disp = sorted(base[base["Empresa"].isin(sel_empresa)]["Informe seu setor / departamento."].dropna().unique())
-    sel_setor = st.multiselect("Setor", setores_disp, default=setores_disp, key="ai_setor")
+    setores_disp  = sorted(base[base["Empresa"].isin(sel_empresa)]["Informe seu setor / departamento."].dropna().unique())
+    sel_setor     = st.multiselect("Setor", setores_disp, default=setores_disp, key="ai_setor")
 
-    cargos_disp = sorted(base[base["Informe seu setor / departamento."].isin(sel_setor)]["Informe seu cargo"].dropna().unique())
-    sel_cargo = st.multiselect("Cargo", cargos_disp, default=cargos_disp, key="ai_cargo")
+    cargos_disp   = sorted(base[base["Informe seu setor / departamento."].isin(sel_setor)]["Informe seu cargo"].dropna().unique())
+    sel_cargo     = st.multiselect("Cargo", cargos_disp, default=cargos_disp, key="ai_cargo")
 
     st.markdown("---")
-    
     if st.button("🗑️ Limpar conversa", use_container_width=True):
         st.session_state.chat_history = []
-        st.session_state.context_injected = False
         st.rerun()
 
     st.markdown("---")
     st.markdown(f"""
-    <div style="font-size:11px; color:{COR_MUTED}; line-height:1.6;">
+    <div style="font-size:11px; color:{COR_MUTED}; line-height:1.8;">
         <b>Modelo:</b> Llama 3.3 70B (Groq)<br>
         <b>Dados:</b> {len(base)} respondentes<br>
-        <b>Instrumento:</b> HSE-IT (NR-1)
+        <b>Contexto:</b> dashboard completo (heatmap + PGR + questões)
     </div>
     """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
-# INICIALIZAR SESSION STATE
+# SESSION STATE
 # ─────────────────────────────────────────────
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "context_injected" not in st.session_state:
-    st.session_state.context_injected = False
+
+# ─────────────────────────────────────────────
+# CONTEXTO — build_context do analytics.py
+# aproveita TODAS as análises do dashboard
+# ─────────────────────────────────────────────
+contexto_atual, stats = build_context(
+    base,
+    filtro_empresa=sel_empresa,
+    filtro_setor=sel_setor,
+    filtro_cargo=sel_cargo,
+)
+
+n_f          = stats.get("n_respondentes", 0)
+nr_f         = stats.get("nr_medio", 0)
+perc_alto_f  = stats.get("perc_risco_alto", 0)
 
 # ─────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────
-contexto_atual, stats = build_context(sel_empresa, sel_setor, sel_cargo)
-n_f = stats.get("n_respondentes", 0)
-nr_f = stats.get("nr_medio", 0)
-perc_alto_f = (stats.get("distribuicao_risco", {}).get("Crítico", 0) + 
-               stats.get("distribuicao_risco", {}).get("Importante", 0)) / max(n_f, 1) * 100
-
 st.markdown(f"""
 <div class="agent-header">
   <div class="agent-avatar">🧠</div>
@@ -546,7 +302,7 @@ st.markdown(f"""
     <h1 style="margin:0; font-size:22px;">Agente de Análise HSE-IT</h1>
     <p style="margin:4px 0 0 0; font-size:13px; color:{COR_MUTED};">
         Especialista em Riscos Psicossociais · NR-1 · Vivamente 360°
-        &nbsp;·&nbsp; 
+        &nbsp;·&nbsp;
         <span style="color:{COR_TEXTO};">{n_f} respondentes</span>
         &nbsp;·&nbsp; NR médio: <span style="color:{COR_AMARELO if nr_f >= 5 else COR_VERDE};">{nr_f:.1f}</span>
         &nbsp;·&nbsp; <span style="color:{COR_LARANJA};">{perc_alto_f:.0f}% em risco alto</span>
@@ -560,7 +316,7 @@ st.markdown(f"""
 # ─────────────────────────────────────────────
 if not st.session_state.chat_history:
     st.markdown(f'<div class="section-title">💡 Perguntas de partida</div>', unsafe_allow_html=True)
-    
+
     quick_questions = [
         ("🔴", "Quais são os principais alertas que preciso comunicar à liderança hoje?"),
         ("📊", "Analise os setores mais críticos e o que está por trás desses números."),
@@ -569,7 +325,7 @@ if not st.session_state.chat_history:
         ("👥", "Que padrões você identifica nos cargos com maior risco?"),
         ("📋", "O que o PGR precisa contemplar com base nessa análise?"),
     ]
-    
+
     cols = st.columns(2)
     for i, (emoji, q) in enumerate(quick_questions):
         with cols[i % 2]:
@@ -580,47 +336,35 @@ if not st.session_state.chat_history:
 # ─────────────────────────────────────────────
 # HISTÓRICO DO CHAT
 # ─────────────────────────────────────────────
-chat_container = st.container()
-
-with chat_container:
-    for msg in st.session_state.chat_history:
-        if msg["role"] == "user":
-            st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
+for msg in st.session_state.chat_history:
+    if msg["role"] == "user":
+        st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
+    else:
+        content = msg["content"]
+        if isinstance(content, dict):
+            st.markdown('<div class="msg-agent">🤖 <strong style="color:#A78BFA;">Agente HSE-IT</strong><br><br>', unsafe_allow_html=True)
+            st.markdown("### 🎯 Plano de Ação")
+            st.markdown(f"**Problema:** {content['problema']}")
+            st.markdown(f"**Objetivo:** {content['objetivo']}")
+            for acao in content["acoes"]:
+                st.markdown(f"""
+- **{acao['descricao']}**
+  - Responsável: {acao['responsavel']}
+  - Prazo: {acao['prazo']}
+  - Prioridade: {acao['prioridade']}
+  - Indicador: {acao['indicador_sucesso']}
+""")
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            content = msg["content"]
-        
-            # 👇 Se for plano estruturado
-            if isinstance(content, dict):
-                st.markdown('<div class="msg-agent">🤖 <strong style="color:#A78BFA;">Agente HSE-IT</strong><br><br>', unsafe_allow_html=True)
-                
-                st.markdown("### 🎯 Plano de Ação")
-                st.markdown(f"**Problema:** {content['problema']}")
-                st.markdown(f"**Objetivo:** {content['objetivo']}")
-        
-                for acao in content["acoes"]:
-                    st.markdown(f"""
-                    - **{acao['descricao']}**
-                      - Responsável: {acao['responsavel']}
-                      - Prazo: {acao['prazo']}
-                      - Prioridade: {acao['prioridade']}
-                      - Indicador: {acao['indicador_sucesso']}
-                    """)
-        
-                st.markdown("</div>", unsafe_allow_html=True)
-        
-            # 👇 fallback (texto normal)
-            else:
-                content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
-                content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
-                content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
-        
-                st.markdown(f'''
-                <div class="msg-agent">
-                🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
-                {content_html}
-                </div>
-                ''', unsafe_allow_html=True)
-                
+            content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
+            content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
+            content_html = re.sub(r'\*(.*?)\*', r'<em>\1</em>', content_html)
+            st.markdown(f'''
+            <div class="msg-agent">
+            🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
+            {content_html}
+            </div>
+            ''', unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
 # INPUT DO USUÁRIO
@@ -637,12 +381,11 @@ col_input, col_btn = st.columns([5, 1])
 with col_input:
     typed_input = st.text_area(
         "Sua pergunta",
-        placeholder="Ex: Quais setores precisam de intervenção urgente? / Explique o score de Demandas / Que ações concretas você recomenda?",
+        placeholder="Ex: Quais setores precisam de intervenção urgente?",
         height=80,
         key="user_input_area",
         label_visibility="collapsed",
     )
-
 with col_btn:
     send_btn = st.button("Enviar →", use_container_width=True, type="primary")
 
@@ -653,110 +396,94 @@ if typed_input and send_btn:
 # PROCESSAR MENSAGEM
 # ─────────────────────────────────────────────
 if user_input and user_input.strip():
-    if not GROQ_API_KEY:
-        st.error("⚠️ GROQ_API_KEY não configurada no secrets.toml.")
-        st.stop()
+    st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
 
-    st.session_state.chat_history.append({
-        "role": "user",
-        "content": user_input.strip()
-    })
-
-    api_messages = []
-    
-    context_message = f"""CONTEXTO ATUAL DOS DADOS HSE-IT (use apenas estes números):
+    # Monta histórico para API (injeta contexto rico na primeira mensagem)
+    context_message = f"""CONTEXTO COMPLETO DO DASHBOARD HSE-IT (use estes dados para embasar o plano):
 
 {contexto_atual}
 
 ---
-Agora gere o plano de ação no formato JSON exatamente como definido no system prompt e nos exemplos."""
+Gere o plano de ação em JSON conforme o schema definido."""
 
+    api_messages = []
     for i, msg in enumerate(st.session_state.chat_history):
         if i == 0:
             api_messages.append({
                 "role": "user",
-                "content": f"{context_message}\n\nPrimeira pergunta do usuário: {msg['content']}"
+                "content": f"{context_message}\n\nPergunta: {msg['content']}"
             })
         else:
-            api_messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
+            api_messages.append({"role": msg["role"], "content": msg["content"]})
 
-    # Chamar API Groq  ← função atualizada
-    with st.spinner("🧠 Analisando dados..."):
+    with st.spinner("🧠 Analisando dados do dashboard..."):
         try:
-            raw_resposta = call_groq(api_messages, GROQ_API_KEY)
-            
-            plan = validate_and_fix_plan(raw_resposta)
-    
-            # 👉 AQUI entra o bloco que você perguntou
-
-            # salva no histórico (em JSON formatado)
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": plan
-            })
-    
+            raw = call_groq(api_messages, GROQ_API_KEY)
+            plan = validate_and_fix_plan(raw)
+            st.session_state.chat_history.append({"role": "assistant", "content": plan})
             st.rerun()
-    
         except Exception as e:
             st.error(f"❌ Erro ao consultar o agente: {str(e)}")
             st.session_state.chat_history.pop()
 
 # ─────────────────────────────────────────────
-# SEÇÃO DE INSIGHTS AUTOMÁTICOS (se não há chat ainda)
+# RESUMO AUTOMÁTICO (quando não há chat ainda)
 # ─────────────────────────────────────────────
 if not st.session_state.chat_history and stats:
     st.markdown(f'<div class="section-title">📊 Resumo automático dos dados</div>', unsafe_allow_html=True)
-    
-    dist = stats.get("distribuicao_risco", {})
-    n_total = stats.get("n_respondentes", 1)
+
+    dist   = stats.get("distribuicao_risco", {})
+    n_tot  = max(stats.get("n_respondentes", 1), 1)
     scores = stats.get("scores_por_dimensao", {})
-    
+    class_ = stats.get("classificacao_por_dimensao", {})
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         st.markdown("**Distribuição de risco**")
-        for nivel, cor in [("Crítico", COR_VERMELHO), ("Importante", COR_LARANJA), 
+        for nivel, cor in [("Crítico", COR_VERMELHO), ("Importante", COR_LARANJA),
                            ("Moderado", COR_AMARELO), ("Aceitável", COR_VERDE)]:
             cnt = dist.get(nivel, 0)
-            pct = cnt / n_total * 100
+            pct = cnt / n_tot * 100
             st.markdown(f"""
             <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid {COR_BORDA};">
                 <span style="color:{COR_MUTED};">{nivel}</span>
                 <span><b style="color:{cor};">{pct:.1f}%</b> <span style="color:{COR_MUTED}; font-size:12px;">({cnt})</span></span>
             </div>
             """, unsafe_allow_html=True)
-    
+
     with col2:
-        st.markdown("**Scores por dimensão** (0–4)")
+        st.markdown("**Scores por dimensão com classificação**")
         for dim_label, score in scores.items():
+            cls = class_.get(dim_label, "")
             is_neg = dim_label in ["Demandas", "Relacionamentos"]
-            if is_neg:
-                cor = COR_VERMELHO if score >= 3 else COR_AMARELO if score >= 2 else COR_VERDE
-            else:
-                cor = COR_VERMELHO if score <= 1.5 else COR_AMARELO if score <= 2.5 else COR_VERDE
-            
+            cor = (COR_VERMELHO if (score >= 3 if is_neg else score <= 1.5)
+                   else COR_AMARELO if (score >= 2 if is_neg else score <= 2.5)
+                   else COR_VERDE)
             st.markdown(f"""
             <div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid {COR_BORDA};">
                 <span style="color:{COR_MUTED}; font-size:13px;">{dim_label}</span>
-                <b style="color:{cor};">{score:.2f}</b>
+                <span><b style="color:{cor};">{score:.2f}</b>
+                <span style="color:{COR_MUTED}; font-size:11px;"> {cls}</span></span>
             </div>
             """, unsafe_allow_html=True)
 
-    top_s = stats.get("top_setores_criticos", [])
+    # Top setores críticos (usando dados ricos do analytics.py)
+    top_s = stats.get("top_setores", [])
     if top_s:
-        st.markdown(f'<div class="section-title">🔥 Setores mais críticos (por NR)</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-title">🔥 Setores mais críticos</div>', unsafe_allow_html=True)
         for s in top_s[:3]:
-            nr = s.get("nr_medio", 0)
+            nr  = s.get("NR_geral", 0)
             cls = "critico" if nr >= 13 else "alerta" if nr >= 9 else "ok"
+            dims_crit = s.get("dimensoes_criticas_ou_importantes", {})
+            dims_txt  = "  ·  " + ", ".join(f"{k}={v}" for k, v in list(dims_crit.items())[:3]) if dims_crit else ""
             st.markdown(f"""
             <div class="insight-card insight-{cls}">
-                <b>{s.get("setor","—")}</b>
-                &nbsp;&nbsp;<span style="color:{COR_MUTED}; font-size:12px;">{s.get("n",0)} pessoas</span>
-                &nbsp;&nbsp;NR médio: <b>{nr:.2f}</b>
-                &nbsp;&nbsp;{s.get("perc_alto",0)*100:.0f}% em risco alto
+                <b>{s.get('Setor', s.get('setor', '—'))}</b>
+                &nbsp;&nbsp;<span style="color:{COR_MUTED}; font-size:12px;">{s.get('n_colaboradores', 0)} pessoas</span>
+                &nbsp;&nbsp;NR: <b>{nr:.2f}</b>
+                &nbsp;&nbsp;{s.get('perc_risco_alto', 0)*100:.0f}% em risco alto
+                <span style="color:{COR_MUTED}; font-size:11px;">{dims_txt}</span>
             </div>
             """, unsafe_allow_html=True)
 
@@ -770,7 +497,7 @@ st.markdown(f"""
     🤖 Agente HSE-IT · Powered by Groq + Llama 3.3 · Vivamente 360°
   </span>
   <span style="font-size:11px; color:{COR_MUTED}; font-family:'DM Mono', monospace;">
-    {datetime.now().strftime("%d/%m/%Y")} · {n_f} respondentes no contexto
+    {datetime.now().strftime("%d/%m/%Y")} · {n_f} respondentes · contexto: dashboard completo
   </span>
 </div>
 """, unsafe_allow_html=True)
