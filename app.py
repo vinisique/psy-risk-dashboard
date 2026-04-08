@@ -1148,9 +1148,9 @@ with tabs[-1]:
     # RECOMENDAÇÕES
     if st.button("Gerar Recomendações"):
         recs = gerar_recomendacoes(base_f)
-
+    
         for r in recs:
-            st.success(r)
+            st.write(r)
 
     # DIAGNÓSTICO
     setor_sel = st.selectbox("Selecionar setor", setor_f["Setor"])
