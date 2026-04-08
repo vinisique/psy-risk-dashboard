@@ -398,137 +398,140 @@ PRIORIDADE_BADGE = {
 }
 
 
-def render_5w2h_table_html(plan: dict, plan_key: str, editable: bool = True, saved_idx: int = None):
-    """Renders the 5W2H table. If editable=True, shows Streamlit widgets for editing."""
+def plan_to_dataframe(plan: dict) -> pd.DataFrame:
+    """Converte o plano JSON em DataFrame no formato 5W2H+Status."""
     acoes = plan.get("acoes", [])
+    rows = []
+    for a in acoes:
+        rows.append({
+            "O quê? (Ação)"         : a.get("descricao", ""),
+            "Por quê? (Motivo)"     : plan.get("objetivo", ""),   # objetivo geral como "why"
+            "Onde? (Local/Área)"    : a.get("onde", ""),
+            "Quando? (Prazo)"       : a.get("prazo", ""),
+            "Quem? (Responsável)"   : a.get("responsavel", ""),
+            "Como? (Método)"        : a.get("como", ""),
+            "Quanto? (Indicador)"   : a.get("indicador_sucesso", ""),
+            "Status"                : a.get("status", "⏳ Pendente"),
+            "Prioridade"            : a.get("prioridade", "Alta"),
+        })
+    return pd.DataFrame(rows)
 
-    # ── Static HTML header + problema/objetivo ──
+
+def dataframe_to_acoes(df: pd.DataFrame, original_acoes: list) -> list:
+    """Converte o DataFrame editado de volta para lista de ações."""
+    updated = []
+    for i, row in df.iterrows():
+        base = original_acoes[i] if i < len(original_acoes) else {}
+        updated.append({
+            "descricao"         : row["O quê? (Ação)"],
+            "responsavel"       : row["Quem? (Responsável)"],
+            "prazo"             : row["Quando? (Prazo)"],
+            "prioridade"        : row["Prioridade"],
+            "indicador_sucesso" : row["Quanto? (Indicador)"],
+            "onde"              : row["Onde? (Local/Área)"],
+            "como"              : row["Como? (Método)"],
+            "status"            : row["Status"],
+        })
+    return updated
+
+
+def render_5w2h_card(plan: dict, plan_key: str, editable: bool = True):
+    """
+    Renderiza o plano como tabela 5W2H real usando st.data_editor.
+    Cada linha = uma ação. Cada coluna = um W ou H.
+    Retorna o DataFrame atual (editado ou não).
+    """
+    # ── Cabeçalho com problema e objetivo ──
     st.markdown(f"""
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-        <div style="width:32px;height:32px;background:linear-gradient(135deg,{COR_ACCENT},{COR_PURPLE});
-             border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;">🎯</div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <div style="width:36px;height:36px;background:linear-gradient(135deg,{COR_ACCENT},{COR_PURPLE});
+             border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎯</div>
         <div>
-            <div style="font-size:15px;font-weight:600;">Plano de Ação · 5W2H</div>
-            <div style="font-size:11px;color:{COR_MUTED};">Gerado pelo Agente HSE-IT</div>
+            <div style="font-size:15px;font-weight:600;color:{COR_TEXTO};">Plano de Ação · 5W2H</div>
+            <div style="font-size:11px;color:{COR_MUTED};">Gerado pelo Agente HSE-IT · clique em qualquer célula para editar</div>
         </div>
     </div>
-    <div class="w2h-problema">
-        <span style="font-size:10px;color:{COR_PURPLE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">Problema</span><br>
-        {plan.get('problema','—')}
+    <div style="background:#1e1e30;border-left:3px solid {COR_PURPLE};border-radius:0 8px 8px 0;
+         padding:10px 14px;margin-bottom:6px;">
+        <span style="font-size:10px;color:{COR_PURPLE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">⚠ Problema identificado</span><br>
+        <span style="font-size:13px;">{plan.get('problema','—')}</span>
     </div>
-    <div class="w2h-objetivo">
-        <span style="font-size:10px;color:{COR_VERDE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">Objetivo SMART</span><br>
-        {plan.get('objetivo','—')}
+    <div style="background:#1a2a1a;border-left:3px solid {COR_VERDE};border-radius:0 8px 8px 0;
+         padding:10px 14px;margin-bottom:16px;">
+        <span style="font-size:10px;color:{COR_VERDE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">🎯 Objetivo SMART</span><br>
+        <span style="font-size:13px;">{plan.get('objetivo','—')}</span>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Table header ──
-    st.markdown("""
-    <table class="w2h-table">
-      <thead>
-        <tr>
-          <th class="th-what">O quê?</th>
-          <th class="th-why">Por quê?</th>
-          <th class="th-where">Onde?</th>
-          <th class="th-when">Quando?</th>
-          <th class="th-who">Quem?</th>
-          <th class="th-how">Como?</th>
-          <th class="th-howmuch">Quanto?</th>
-          <th class="th-status">Status</th>
-        </tr>
-      </thead>
-    </table>
-    """, unsafe_allow_html=True)
+    # ── Monta DataFrame ──
+    df = plan_to_dataframe(plan)
 
-    # ── Per-row rendering with editable widgets ──
-    for i, acao in enumerate(acoes):
-        row_key = f"{plan_key}_row{i}"
-        status_key  = f"{row_key}_status"
-        desc_key    = f"{row_key}_desc"
-        resp_key    = f"{row_key}_resp"
-        prazo_key   = f"{row_key}_prazo"
-        prio_key    = f"{row_key}_prio"
-        ind_key     = f"{row_key}_ind"
+    if df.empty:
+        st.warning("Nenhuma ação encontrada no plano.")
+        return df
 
-        # Initialize session state defaults
-        if status_key not in st.session_state:
-            st.session_state[status_key] = acao.get("status", "⏳ Pendente")
-        if editable:
-            if desc_key  not in st.session_state: st.session_state[desc_key]  = acao.get("descricao", "")
-            if resp_key  not in st.session_state: st.session_state[resp_key]  = acao.get("responsavel", "")
-            if prazo_key not in st.session_state: st.session_state[prazo_key] = acao.get("prazo", "")
-            if prio_key  not in st.session_state: st.session_state[prio_key]  = acao.get("prioridade", "Alta")
-            if ind_key   not in st.session_state: st.session_state[ind_key]   = acao.get("indicador_sucesso", "")
+    # ── Configuração das colunas do data_editor ──
+    col_config = {
+        "O quê? (Ação)": st.column_config.TextColumn(
+            "📋 O quê?",
+            help="Descrição da ação a ser executada",
+            width="large",
+        ),
+        "Por quê? (Motivo)": st.column_config.TextColumn(
+            "❓ Por quê?",
+            help="Justificativa / objetivo da ação",
+            width="medium",
+            disabled=True,   # vem do objetivo geral — editável no campo acima
+        ),
+        "Onde? (Local/Área)": st.column_config.TextColumn(
+            "📍 Onde?",
+            help="Setor, área ou local de aplicação",
+            width="small",
+        ),
+        "Quando? (Prazo)": st.column_config.TextColumn(
+            "📅 Quando?",
+            help="Prazo ou data de conclusão",
+            width="small",
+        ),
+        "Quem? (Responsável)": st.column_config.TextColumn(
+            "👤 Quem?",
+            help="Responsável pela execução",
+            width="medium",
+        ),
+        "Como? (Método)": st.column_config.TextColumn(
+            "⚙️ Como?",
+            help="Método ou abordagem de execução",
+            width="medium",
+        ),
+        "Quanto? (Indicador)": st.column_config.TextColumn(
+            "📊 Quanto?",
+            help="Indicador mensurável de sucesso",
+            width="medium",
+        ),
+        "Status": st.column_config.SelectboxColumn(
+            "🚦 Status",
+            options=STATUS_OPTIONS,
+            width="small",
+        ),
+        "Prioridade": st.column_config.SelectboxColumn(
+            "🔺 Prioridade",
+            options=PRIORIDADE_OPTIONS,
+            width="small",
+        ),
+    }
 
-        # Render row as expandable section
-        prio = st.session_state.get(prio_key, acao.get("prioridade","Alta")) if editable else acao.get("prioridade","Alta")
-        status = st.session_state.get(status_key, acao.get("status","⏳ Pendente"))
-        prio_badge  = PRIORIDADE_BADGE.get(prio, "badge-baixa")
-        status_badge = STATUS_BADGE.get(status, "badge-pendente")
+    edited_df = st.data_editor(
+        df,
+        key=f"de_{plan_key}",
+        column_config=col_config,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed" if not editable else "dynamic",
+        disabled=not editable,
+        height=min(400, 60 + len(df) * 80),
+    )
 
-        st.markdown(f"""
-        <div style="background:#15171f;border:1px solid {COR_BORDA};border-radius:8px;padding:12px 16px;margin:4px 0;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <span style="font-size:11px;color:{COR_MUTED};">Ação {i+1}</span>
-            <div style="display:flex;gap:6px;">
-              <span class="{prio_badge}">{prio}</span>
-              <span class="{status_badge}">{status}</span>
-            </div>
-          </div>
-        """, unsafe_allow_html=True)
-
-        if editable:
-            c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
-            with c1:
-                st.text_area("O quê? (descrição)", key=desc_key, height=70, label_visibility="collapsed",
-                             placeholder="O quê? Descreva a ação...")
-            with c2:
-                st.text_input("Quem?", key=resp_key, label_visibility="collapsed", placeholder="Quem? Responsável...")
-                st.text_input("Quando?", key=prazo_key, label_visibility="collapsed", placeholder="Quando? Prazo...")
-            with c3:
-                st.selectbox("Prioridade", PRIORIDADE_OPTIONS, key=prio_key, label_visibility="collapsed")
-                st.selectbox("Status", STATUS_OPTIONS, key=status_key, label_visibility="collapsed")
-            with c4:
-                st.text_area("Indicador", key=ind_key, height=70, label_visibility="collapsed",
-                             placeholder="Indicador de sucesso...")
-        else:
-            # Read-only view
-            desc  = acao.get("descricao", "—")
-            resp  = acao.get("responsavel", "—")
-            prazo = acao.get("prazo", "—")
-            ind   = acao.get("indicador_sucesso", "—")
-            st.markdown(f"""
-            <div style="display:grid;grid-template-columns:3fr 1fr 1fr 2fr;gap:10px;font-size:12px;">
-              <div><span style="color:{COR_MUTED};font-size:10px;">O QUÊ</span><br>{desc}</div>
-              <div><span style="color:{COR_MUTED};font-size:10px;">QUEM</span><br>{resp}</div>
-              <div><span style="color:{COR_MUTED};font-size:10px;">QUANDO</span><br>{prazo}</div>
-              <div><span style="color:{COR_MUTED};font-size:10px;">INDICADOR</span><br>{ind}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            st.selectbox("Status", STATUS_OPTIONS,
-                         index=STATUS_OPTIONS.index(status) if status in STATUS_OPTIONS else 0,
-                         key=status_key, label_visibility="collapsed")
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    return acoes
-
-
-def collect_edited_plan(plan: dict, plan_key: str) -> dict:
-    """Collects current widget values into updated plan dict."""
-    acoes = plan.get("acoes", [])
-    updated_acoes = []
-    for i, acao in enumerate(acoes):
-        row_key = f"{plan_key}_row{i}"
-        updated_acoes.append({
-            "descricao":        st.session_state.get(f"{row_key}_desc", acao.get("descricao","")),
-            "responsavel":      st.session_state.get(f"{row_key}_resp", acao.get("responsavel","")),
-            "prazo":            st.session_state.get(f"{row_key}_prazo", acao.get("prazo","")),
-            "prioridade":       st.session_state.get(f"{row_key}_prio", acao.get("prioridade","Alta")),
-            "indicador_sucesso":st.session_state.get(f"{row_key}_ind", acao.get("indicador_sucesso","")),
-            "status":           st.session_state.get(f"{row_key}_status", acao.get("status","⏳ Pendente")),
-        })
-    return {**plan, "acoes": updated_acoes}
+    return edited_df
 
 
 def compute_plan_progress(plan: dict) -> float:
@@ -562,12 +565,15 @@ def render_plans_tab():
         n_done  = int(progress * n_acoes)
         prog_pct = int(progress * 100)
 
-        with st.expander(f"📌 {plan.get('problema','Plano')[:80]}  ·  {prog_pct}% concluído  ·  Salvo em {created_at}", expanded=(idx==0)):
+        with st.expander(
+            f"📌 {plan.get('problema','Plano')[:80]}  ·  {prog_pct}% concluído  ·  Salvo em {created_at}",
+            expanded=(idx == 0)
+        ):
             plan_key = f"saved_plan_{idx}"
 
             # Progress bar
             st.markdown(f"""
-            <div style="margin-bottom:12px;">
+            <div style="margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:{COR_MUTED};margin-bottom:4px;">
                     <span>Progresso geral</span><span>{n_done}/{n_acoes} ações concluídas</span>
                 </div>
@@ -577,20 +583,16 @@ def render_plans_tab():
             </div>
             """, unsafe_allow_html=True)
 
-            # Render table (editable for status updates)
-            render_5w2h_table_html(plan, plan_key, editable=False, saved_idx=idx)
+            # Render editable 5W2H table
+            edited_df = render_5w2h_card(plan, plan_key, editable=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
             col_upd, col_del, _ = st.columns([2, 2, 5])
             with col_upd:
-                if st.button("💾 Salvar alterações de status", key=f"update_plan_{idx}", use_container_width=True):
-                    # Update statuses from session state
-                    for i, acao in enumerate(plan["acoes"]):
-                        sk = f"saved_plan_{idx}_row{i}_status"
-                        if sk in st.session_state:
-                            acao["status"] = st.session_state[sk]
-                    st.session_state.action_plans[idx]["plan"] = plan
-                    st.success("✅ Status atualizado!")
+                if st.button("💾 Salvar alterações", key=f"update_plan_{idx}", use_container_width=True, type="primary"):
+                    acoes_atualizadas = dataframe_to_acoes(edited_df, plan.get("acoes", []))
+                    st.session_state.action_plans[idx]["plan"] = {**plan, "acoes": acoes_atualizadas}
+                    st.success("✅ Plano atualizado!")
                     st.rerun()
             with col_del:
                 if st.button("🗑️ Remover plano", key=f"del_plan_{idx}", use_container_width=True):
@@ -724,38 +726,34 @@ for msg_idx, msg in enumerate(st.session_state.chat_history):
         content = msg["content"]
         if isinstance(content, dict):
             plan_key = f"chat_plan_{msg_idx}"
-            with st.container():
+            st.markdown(f"""
+            <div style="border-left:3px solid {COR_PURPLE};padding-left:12px;margin:8px 0 4px 0;">
+                <span style="font-size:13px;font-weight:600;color:{COR_PURPLE};">🤖 Agente HSE-IT</span>
+                <span style="font-size:11px;color:{COR_MUTED};margin-left:8px;">· Plano de Ação · 5W2H</span>
+            </div>
+            """, unsafe_allow_html=True)
+
+            edited_df = render_5w2h_card(content, plan_key, editable=True)
+
+            col_save, col_info, _ = st.columns([2, 3, 4])
+            with col_save:
+                if st.button("💾 Salvar Plano de Ação", key=f"save_{plan_key}",
+                             use_container_width=True, type="primary"):
+                    # Rebuild plan from the edited dataframe
+                    acoes_atualizadas = dataframe_to_acoes(edited_df, content.get("acoes", []))
+                    updated = {**content, "acoes": acoes_atualizadas}
+                    st.session_state.action_plans.append({
+                        "plan": updated,
+                        "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                    })
+                    st.session_state.chat_history[msg_idx]["content"] = updated
+                    st.success("✅ Plano salvo! Acesse em **Planos de Ação** na barra lateral.")
+            with col_info:
                 st.markdown(f"""
-                <div style="background:{COR_CARD};border:1px solid {COR_BORDA};
-                     border-radius:4px 16px 16px 16px;padding:20px;margin:8px 10% 8px 0;">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
-                        <span style="font-size:15px;">🤖</span>
-                        <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong>
-                        <span style="font-size:11px;color:{COR_MUTED};margin-left:4px;">· Plano de Ação gerado</span>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                render_5w2h_table_html(content, plan_key, editable=True)
-
-                st.markdown("<br>", unsafe_allow_html=True)
-                col_save, col_info, _ = st.columns([2, 3, 4])
-                with col_save:
-                    if st.button("💾 Salvar Plano de Ação", key=f"save_{plan_key}", use_container_width=True, type="primary"):
-                        updated = collect_edited_plan(content, plan_key)
-                        st.session_state.action_plans.append({
-                            "plan": updated,
-                            "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
-                        })
-                        # Update chat history too
-                        st.session_state.chat_history[msg_idx]["content"] = updated
-                        st.success(f"✅ Plano salvo! Acesse em **Planos de Ação** na barra lateral.")
-                with col_info:
-                    st.markdown(f"""
-                    <div style="font-size:11px;color:{COR_MUTED};padding-top:8px;">
-                        ✏️ Edite os campos diretamente antes de salvar
-                    </div>""", unsafe_allow_html=True)
-
-                st.markdown("</div>", unsafe_allow_html=True)
+                <div style="font-size:11px;color:{COR_MUTED};padding-top:8px;">
+                    ✏️ Clique em qualquer célula para editar · depois clique em Salvar
+                </div>""", unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
         else:
             content_html = content.replace("\n\n", "<br><br>").replace("\n", "<br>")
             content_html = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', content_html)
