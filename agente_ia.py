@@ -24,6 +24,8 @@ from analytics import (
     NIVEIS_ORDEM, NIVEIS_GERAL_ORDEM,
 )
 
+from rag import buscar_contexto_normativo
+
 # ─────────────────────────────────────────────
 # CONFIG DA PÁGINA
 # ─────────────────────────────────────────────
@@ -285,7 +287,9 @@ base, setor, cargo, unidade = _load()
 # ─────────────────────────────────────────────
 # SYSTEM PROMPT
 # ─────────────────────────────────────────────
-SYSTEM_PROMPT = """Você é o Agente HSE-IT — especialista em saúde mental ocupacional, riscos psicossociais e NR-1, com acesso aos dados completos do dashboard Vivamente 360°.
+SYSTEM_PROMPT = """Você é o Agente HSE-IT — especialista em saúde mental ocupacional, riscos psicossociais, NR-1, ISO 45003 e demais normas de SST, com acesso aos dados completos do dashboard Vivamente 360°.
+
+Quando a BASE NORMATIVA RELEVANTE estiver presente no contexto, utilize-a para embasar análises e planos de ação, citando o documento fonte (ex: "Conforme NR-1 item 1.5.4..." ou "A ISO 45003:2021 orienta que...").
 
 ════════════════════════════════════════════════
 REGRA FUNDAMENTAL DE FORMATO
@@ -945,12 +949,18 @@ if user_input and user_input.strip():
     st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
 
     # Monta histórico para API (injeta contexto rico na primeira mensagem)
-    context_message = f"""CONTEXTO COMPLETO DO DASHBOARD HSE-IT (use estes dados para embasar o plano):
+    contexto_normativo = buscar_contexto_normativo(user_input.strip())
+
+    context_message = f"""CONTEXTO COMPLETO DO DASHBOARD HSE-IT:
 
 {contexto_atual}
 
+{contexto_normativo}
+
 ---
-Gere o plano de ação em JSON conforme o schema definido."""
+Use os dados do dashboard E as referências normativas acima para embasar análises e planos de ação.
+Cite artigos e itens de normas quando relevante.
+Gere a resposta em JSON conforme o schema definido no system prompt."""
 
     api_messages = []
     last_user_idx = max(i for i, m in enumerate(st.session_state.chat_history) if m["role"] == "user")
