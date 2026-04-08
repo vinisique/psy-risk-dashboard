@@ -664,12 +664,12 @@ if user_input and user_input.strip():
 
     api_messages = []
     
-    context_message = f"""Você tem acesso ao seguinte contexto de dados do dashboard HSE-IT:
+    context_message = f"""CONTEXTO ATUAL DOS DADOS HSE-IT (use apenas estes números):
 
 {contexto_atual}
 
 ---
-Responda às perguntas do usuário com base nesses dados. Seja específico, cite números, e gere insights acionáveis."""
+Agora gere o plano de ação no formato JSON exatamente como definido no system prompt e nos exemplos."""
 
     for i, msg in enumerate(st.session_state.chat_history):
         if i == 0:
