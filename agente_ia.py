@@ -423,8 +423,10 @@ if user_input and user_input.strip():
 Gere o plano de ação em JSON conforme o schema definido."""
 
     api_messages = []
+    last_user_idx = max(i for i, m in enumerate(st.session_state.chat_history) if m["role"] == "user")
     for i, msg in enumerate(st.session_state.chat_history):
-        if i == 0:
+        if msg["role"] == "user" and i == last_user_idx:
+            # Sempre injeta o contexto atualizado na última pergunta do usuário
             api_messages.append({
                 "role": "user",
                 "content": f"{context_message}\n\nPergunta: {msg['content']}"
