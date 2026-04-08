@@ -304,11 +304,14 @@ SCHEMA OBRIGATÓRIO:
   "objetivo": "objetivo SMART do plano (o que queremos alcançar)",
   "acoes": [
     {
-      "descricao": "descrição clara e acionável da ação",
-      "responsavel": "quem executa (ex: Gestor de RH, Liderança da área, Equipe HSE, etc.)",
-      "prazo": "prazo específico",
+      "descricao": "descrição clara e acionável da ação (O quê?)",
+      "porque": "justificativa específica desta ação (Por quê?)",
+      "onde": "setor, área ou local de aplicação (Onde?)",
+      "responsavel": "quem executa (ex: Gestor de RH, Liderança da área, Equipe HSE) (Quem?)",
+      "prazo": "prazo específico (Quando?)",
+      "como": "método, ferramenta ou abordagem de execução (Como?)",
       "prioridade": "Alta | Média | Baixa",
-      "indicador_sucesso": "métrica mensurável de sucesso"
+      "indicador_sucesso": "métrica mensurável de sucesso — número, %, taxa ou score (Quanto?)"
     }
   ]
 }
@@ -337,6 +340,11 @@ def validate_and_fix_plan(raw_response: str, messages: list, api_key: str, max_r
             for acao in plan["acoes"]:
                 if not all(k in acao for k in ["descricao", "responsavel", "prazo", "prioridade", "indicador_sucesso"]):
                     raise ValueError("Ação incompleta")
+            # Preenche campos opcionais com fallback se ausentes
+            for acao in plan["acoes"]:
+                acao.setdefault("porque", plan.get("objetivo",""))
+                acao.setdefault("onde", "")
+                acao.setdefault("como", acao.get("indicador_sucesso",""))
             return plan
         except Exception as e:
             if attempt < max_retries - 1:
@@ -382,156 +390,238 @@ def call_groq(messages: list, api_key: str) -> str:
 # ─────────────────────────────────────────────
 # 5W2H TABLE RENDERING
 # ─────────────────────────────────────────────
-STATUS_OPTIONS = ["⏳ Pendente", "🔄 Em andamento", "✅ Concluído", "❌ Cancelado"]
+STATUS_OPTIONS    = ["⏳ Pendente", "🔄 Em andamento", "✅ Concluído", "❌ Cancelado"]
 PRIORIDADE_OPTIONS = ["Alta", "Média", "Baixa"]
 
-STATUS_BADGE = {
-    "⏳ Pendente":      "badge-pendente",
-    "🔄 Em andamento":  "badge-em-andamento",
-    "✅ Concluído":     "badge-concluido",
-    "❌ Cancelado":     "badge-cancelado",
+# Cores dos cabeçalhos 5W2H (fiel à imagem de referência)
+TH_COLORS = {
+    "what"   : ("#6B21A8", "#E9D5FF"),   # roxo
+    "why"    : ("#9D174D", "#FCE7F3"),   # rosa-magenta
+    "where"  : ("#BE123C", "#FFE4E6"),   # vermelho-rosa
+    "when"   : ("#C2410C", "#FFEDD5"),   # laranja
+    "who"    : ("#B45309", "#FEF3C7"),   # âmbar
+    "how"    : ("#065F46", "#D1FAE5"),   # verde
+    "howmuch": ("#0E7490", "#CFFAFE"),   # ciano
+    "status" : ("#374151", "#F9FAFB"),   # cinza
 }
-PRIORIDADE_BADGE = {
-    "Alta":  "badge-alta",
-    "Média": "badge-media",
-    "Baixa": "badge-baixa",
+
+STATUS_COLOR = {
+    "⏳ Pendente"      : ("#6B7280", "#F3F4F6"),
+    "🔄 Em andamento"  : ("#2563EB", "#DBEAFE"),
+    "✅ Concluído"     : ("#059669", "#D1FAE5"),
+    "❌ Cancelado"     : ("#DC2626", "#FEE2E2"),
 }
+PRIO_COLOR = {
+    "Alta" : ("#DC2626", "#FEE2E2"),
+    "Média": ("#D97706", "#FEF3C7"),
+    "Baixa": ("#059669", "#D1FAE5"),
+}
+
+
+def _badge(text: str, color_map: dict, default=("#6B7280","#F3F4F6")) -> str:
+    fg, bg = color_map.get(text, default)
+    return (f'<span style="background:{bg};color:{fg};border:1px solid {fg}44;'
+            f'border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;'
+            f'white-space:nowrap;">{text}</span>')
+
+
+def _th(label: str, sub: str, key: str, width: str) -> str:
+    bg, fg = TH_COLORS[key]
+    return (f'<th style="background:{bg};color:{fg};width:{width};min-width:{width};'
+            f'max-width:{width};padding:10px 8px;text-align:center;font-size:12px;'
+            f'font-weight:700;border-right:1px solid rgba(255,255,255,0.15);'
+            f'border-bottom:2px solid rgba(255,255,255,0.2);vertical-align:middle;'
+            f'word-break:break-word;white-space:normal;">'
+            f'{label}<br><span style="font-size:10px;opacity:.75;font-weight:400;">({sub})</span></th>')
+
+
+def _td(content: str, width: str, center: bool = False) -> str:
+    align = "center" if center else "left"
+    return (f'<td style="width:{width};min-width:{width};max-width:{width};'
+            f'padding:10px 8px;vertical-align:top;text-align:{align};'
+            f'font-size:12px;line-height:1.5;word-break:break-word;'
+            f'white-space:normal;border-right:1px solid #2A2D3E;'
+            f'border-bottom:1px solid #2A2D3E;color:#E8EAF0;">'
+            f'{content}</td>')
+
+
+def render_5w2h_html_table(plan: dict) -> str:
+    """Gera a string HTML completa da tabela 5W2H."""
+    acoes = plan.get("acoes", [])
+    objetivo = plan.get("objetivo", "—")
+
+    # Larguras fixas por coluna (total ~1100px)
+    W = {"what":"220px","why":"160px","where":"110px","when":"100px",
+         "who":"130px","how":"130px","howmuch":"160px","status":"110px"}
+
+    thead = (
+        "<thead><tr>"
+        + _th("O quê?",   "What?",     "what",    W["what"])
+        + _th("Por quê?", "Why?",      "why",     W["why"])
+        + _th("Onde?",    "Where?",    "where",   W["where"])
+        + _th("Quando?",  "When?",     "when",    W["when"])
+        + _th("Quem?",    "Who?",      "who",     W["who"])
+        + _th("Como?",    "How?",      "how",     W["how"])
+        + _th("Quanto?",  "How much?", "howmuch", W["howmuch"])
+        + _th("Status",   "Status",    "status",  W["status"])
+        + "</tr></thead>"
+    )
+
+    rows = ""
+    for i, a in enumerate(acoes):
+        bg = "#16192A" if i % 2 == 0 else "#1A1D2B"
+        status = a.get("status", "⏳ Pendente")
+        prio   = a.get("prioridade", "Alta")
+        # "Por quê" usa o objetivo geral pois o schema não tem campo why por ação
+        porque = a.get("porque", objetivo)
+        onde   = a.get("onde", a.get("responsavel_area", "—"))  # fallback gracioso
+        como   = a.get("como", a.get("indicador_sucesso", "—"))  # fallback
+
+        rows += f'<tr style="background:{bg};">'
+        rows += _td(a.get("descricao","—"),         W["what"])
+        rows += _td(porque,                          W["why"])
+        rows += _td(onde,                            W["where"])
+        rows += _td(a.get("prazo","—"),              W["when"],   center=True)
+        rows += _td(a.get("responsavel","—"),        W["who"])
+        rows += _td(como,                            W["how"])
+        rows += _td(a.get("indicador_sucesso","—"),  W["howmuch"])
+        rows += _td(_badge(status, STATUS_COLOR) + "<br>" + _badge(prio, PRIO_COLOR),
+                    W["status"], center=True)
+        rows += "</tr>"
+
+    table_html = f"""
+    <style>
+      .w2h-scroll {{ overflow-x:auto; border-radius:10px; border:1px solid #2A2D3E; }}
+      .w2h-tbl {{ border-collapse:collapse; table-layout:fixed; width:100%; }}
+      .w2h-tbl tr:last-child td {{ border-bottom:none; }}
+      .w2h-tbl td:last-child, .w2h-tbl th:last-child {{ border-right:none !important; }}
+    </style>
+    <div class="w2h-scroll">
+      <table class="w2h-tbl">{thead}<tbody>{rows}</tbody></table>
+    </div>
+    """
+    return table_html
 
 
 def plan_to_dataframe(plan: dict) -> pd.DataFrame:
-    """Converte o plano JSON em DataFrame no formato 5W2H+Status."""
-    acoes = plan.get("acoes", [])
+    """Converte o plano JSON em DataFrame editável."""
+    acoes  = plan.get("acoes", [])
+    objetivo = plan.get("objetivo", "—")
     rows = []
     for a in acoes:
         rows.append({
-            "O quê? (Ação)"         : a.get("descricao", ""),
-            "Por quê? (Motivo)"     : plan.get("objetivo", ""),   # objetivo geral como "why"
-            "Onde? (Local/Área)"    : a.get("onde", ""),
-            "Quando? (Prazo)"       : a.get("prazo", ""),
-            "Quem? (Responsável)"   : a.get("responsavel", ""),
-            "Como? (Método)"        : a.get("como", ""),
-            "Quanto? (Indicador)"   : a.get("indicador_sucesso", ""),
-            "Status"                : a.get("status", "⏳ Pendente"),
-            "Prioridade"            : a.get("prioridade", "Alta"),
+            "O quê?"    : a.get("descricao", ""),
+            "Por quê?"  : a.get("porque", objetivo),
+            "Onde?"     : a.get("onde", ""),
+            "Quando?"   : a.get("prazo", ""),
+            "Quem?"     : a.get("responsavel", ""),
+            "Como?"     : a.get("como", ""),
+            "Quanto?"   : a.get("indicador_sucesso", ""),
+            "Status"    : a.get("status", "⏳ Pendente"),
+            "Prioridade": a.get("prioridade", "Alta"),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows) if rows else pd.DataFrame(
+        columns=["O quê?","Por quê?","Onde?","Quando?","Quem?","Como?","Quanto?","Status","Prioridade"]
+    )
 
 
 def dataframe_to_acoes(df: pd.DataFrame, original_acoes: list) -> list:
     """Converte o DataFrame editado de volta para lista de ações."""
     updated = []
     for i, row in df.iterrows():
-        base = original_acoes[i] if i < len(original_acoes) else {}
         updated.append({
-            "descricao"         : row["O quê? (Ação)"],
-            "responsavel"       : row["Quem? (Responsável)"],
-            "prazo"             : row["Quando? (Prazo)"],
-            "prioridade"        : row["Prioridade"],
-            "indicador_sucesso" : row["Quanto? (Indicador)"],
-            "onde"              : row["Onde? (Local/Área)"],
-            "como"              : row["Como? (Método)"],
-            "status"            : row["Status"],
+            "descricao"         : row.get("O quê?", ""),
+            "porque"            : row.get("Por quê?", ""),
+            "onde"              : row.get("Onde?", ""),
+            "prazo"             : row.get("Quando?", ""),
+            "responsavel"       : row.get("Quem?", ""),
+            "como"              : row.get("Como?", ""),
+            "indicador_sucesso" : row.get("Quanto?", ""),
+            "status"            : row.get("Status", "⏳ Pendente"),
+            "prioridade"        : row.get("Prioridade", "Alta"),
         })
     return updated
 
 
 def render_5w2h_card(plan: dict, plan_key: str, editable: bool = True):
     """
-    Renderiza o plano como tabela 5W2H real usando st.data_editor.
-    Cada linha = uma ação. Cada coluna = um W ou H.
-    Retorna o DataFrame atual (editado ou não).
+    Exibe a tabela 5W2H estilizada via HTML + abre data_editor ao clicar em Editar.
+    Retorna o DataFrame com os dados atuais (editados ou originais).
     """
-    # ── Cabeçalho com problema e objetivo ──
+    import streamlit.components.v1 as components
+
+    # ── Cabeçalho problema/objetivo ──
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <div style="width:36px;height:36px;background:linear-gradient(135deg,{COR_ACCENT},{COR_PURPLE});
-             border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">🎯</div>
+             border-radius:9px;display:flex;align-items:center;justify-content:center;
+             font-size:18px;flex-shrink:0;">🎯</div>
         <div>
             <div style="font-size:15px;font-weight:600;color:{COR_TEXTO};">Plano de Ação · 5W2H</div>
-            <div style="font-size:11px;color:{COR_MUTED};">Gerado pelo Agente HSE-IT · clique em qualquer célula para editar</div>
+            <div style="font-size:11px;color:{COR_MUTED};">HSE-IT · NR-1 · Vivamente 360°</div>
         </div>
     </div>
     <div style="background:#1e1e30;border-left:3px solid {COR_PURPLE};border-radius:0 8px 8px 0;
          padding:10px 14px;margin-bottom:6px;">
-        <span style="font-size:10px;color:{COR_PURPLE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">⚠ Problema identificado</span><br>
-        <span style="font-size:13px;">{plan.get('problema','—')}</span>
+        <span style="font-size:10px;color:{COR_PURPLE};font-weight:700;
+              text-transform:uppercase;letter-spacing:.08em;">⚠ Problema identificado</span><br>
+        <span style="font-size:13px;color:{COR_TEXTO};">{plan.get('problema','—')}</span>
     </div>
     <div style="background:#1a2a1a;border-left:3px solid {COR_VERDE};border-radius:0 8px 8px 0;
-         padding:10px 14px;margin-bottom:16px;">
-        <span style="font-size:10px;color:{COR_VERDE};font-weight:600;text-transform:uppercase;letter-spacing:.08em;">🎯 Objetivo SMART</span><br>
-        <span style="font-size:13px;">{plan.get('objetivo','—')}</span>
+         padding:10px 14px;margin-bottom:14px;">
+        <span style="font-size:10px;color:{COR_VERDE};font-weight:700;
+              text-transform:uppercase;letter-spacing:.08em;">🎯 Objetivo SMART</span><br>
+        <span style="font-size:13px;color:{COR_TEXTO};">{plan.get('objetivo','—')}</span>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Monta DataFrame ──
+    # ── Tabela HTML estilizada ──
+    table_html = render_5w2h_html_table(plan)
+    n_acoes = len(plan.get("acoes", []))
+    components.html(table_html, height=max(140, 55 + n_acoes * 72), scrolling=False)
+
+    # ── Modo edição via data_editor ──
+    edit_toggle_key = f"edit_toggle_{plan_key}"
+    if edit_toggle_key not in st.session_state:
+        st.session_state[edit_toggle_key] = False
+
+    col_btn, col_hint = st.columns([1, 4])
+    with col_btn:
+        label = "✏️ Editar tabela" if not st.session_state[edit_toggle_key] else "👁 Ver tabela"
+        if st.button(label, key=f"toggle_edit_{plan_key}", use_container_width=True):
+            st.session_state[edit_toggle_key] = not st.session_state[edit_toggle_key]
+            st.rerun()
+    with col_hint:
+        if st.session_state[edit_toggle_key]:
+            st.markdown(f'<div style="font-size:11px;color:{COR_MUTED};padding-top:8px;">'
+                        f'Clique em qualquer célula para editar · Status e Prioridade têm dropdown</div>',
+                        unsafe_allow_html=True)
+
     df = plan_to_dataframe(plan)
 
-    if df.empty:
-        st.warning("Nenhuma ação encontrada no plano.")
-        return df
+    if st.session_state[edit_toggle_key] and editable:
+        col_config = {
+            "O quê?"    : st.column_config.TextColumn("📋 O quê?",   width=220),
+            "Por quê?"  : st.column_config.TextColumn("❓ Por quê?", width=160),
+            "Onde?"     : st.column_config.TextColumn("📍 Onde?",    width=110),
+            "Quando?"   : st.column_config.TextColumn("📅 Quando?",  width=100),
+            "Quem?"     : st.column_config.TextColumn("👤 Quem?",    width=130),
+            "Como?"     : st.column_config.TextColumn("⚙️ Como?",    width=130),
+            "Quanto?"   : st.column_config.TextColumn("📊 Quanto?",  width=160),
+            "Status"    : st.column_config.SelectboxColumn("🚦 Status",     options=STATUS_OPTIONS,    width=120),
+            "Prioridade": st.column_config.SelectboxColumn("🔺 Prioridade", options=PRIORIDADE_OPTIONS, width=100),
+        }
+        df = st.data_editor(
+            df,
+            key=f"de_{plan_key}",
+            column_config=col_config,
+            use_container_width=True,
+            hide_index=True,
+            num_rows="fixed",
+            height=min(500, 60 + n_acoes * 55),
+        )
 
-    # ── Configuração das colunas do data_editor ──
-    col_config = {
-        "O quê? (Ação)": st.column_config.TextColumn(
-            "📋 O quê?",
-            help="Descrição da ação a ser executada",
-            width="large",
-        ),
-        "Por quê? (Motivo)": st.column_config.TextColumn(
-            "❓ Por quê?",
-            help="Justificativa / objetivo da ação",
-            width="medium",
-            disabled=True,   # vem do objetivo geral — editável no campo acima
-        ),
-        "Onde? (Local/Área)": st.column_config.TextColumn(
-            "📍 Onde?",
-            help="Setor, área ou local de aplicação",
-            width="small",
-        ),
-        "Quando? (Prazo)": st.column_config.TextColumn(
-            "📅 Quando?",
-            help="Prazo ou data de conclusão",
-            width="small",
-        ),
-        "Quem? (Responsável)": st.column_config.TextColumn(
-            "👤 Quem?",
-            help="Responsável pela execução",
-            width="medium",
-        ),
-        "Como? (Método)": st.column_config.TextColumn(
-            "⚙️ Como?",
-            help="Método ou abordagem de execução",
-            width="medium",
-        ),
-        "Quanto? (Indicador)": st.column_config.TextColumn(
-            "📊 Quanto?",
-            help="Indicador mensurável de sucesso",
-            width="medium",
-        ),
-        "Status": st.column_config.SelectboxColumn(
-            "🚦 Status",
-            options=STATUS_OPTIONS,
-            width="small",
-        ),
-        "Prioridade": st.column_config.SelectboxColumn(
-            "🔺 Prioridade",
-            options=PRIORIDADE_OPTIONS,
-            width="small",
-        ),
-    }
-
-    edited_df = st.data_editor(
-        df,
-        key=f"de_{plan_key}",
-        column_config=col_config,
-        use_container_width=True,
-        hide_index=True,
-        num_rows="fixed" if not editable else "dynamic",
-        disabled=not editable,
-        height=min(400, 60 + len(df) * 80),
-    )
-
-    return edited_df
+    return df
 
 
 def compute_plan_progress(plan: dict) -> float:
