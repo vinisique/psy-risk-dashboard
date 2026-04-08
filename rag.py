@@ -23,14 +23,15 @@ DEFAULT_TOP_K        = 5      # quantos trechos recuperar por query
 
 # Labels amigáveis para exibição
 DOC_LABELS = {
-    "NR-1_2025"              : "NR-1 (2025)",
-    "Portaria_MTE_1419_2024" : "Portaria MTE nº 1.419/2024",
+    "ISO_45003_Preview"      : "ISO 45003:2021 (Preview WMS)",
+    "WHO_ILO_2022"           : "WHO/ILO — Mental Health at Work (2022)",
     "Guia_MTE_Psicossocial"  : "Guia MTE — Riscos Psicossociais",
     "ISO_45003_2021"         : "ISO 45003:2021",
     "Guia_ASSP_ISO45003"     : "Guia ASSP / ISO 45003",
-    "WHO_ILO_2022"           : "WHO/ILO — Mental Health at Work (2022)",
-    "NR-17_Ergonomia"        : "NR-17 (Ergonomia)",
+    "NR-1_2025"              : "NR-1 (2025)",
     "NR-7_PCMSO"             : "NR-7 (PCMSO)",
+    "NR-17_Ergonomia"        : "NR-17 (Ergonomia)",
+    "Portaria_MTE_1419_2024" : "Portaria MTE nº 1.419/2024",
 }
 
 
