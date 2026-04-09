@@ -485,7 +485,6 @@ with tabs[0]:
         margin=dict(l=40, r=40, t=60, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="DM Sans", color=COR_TEXTO),
-        dragmode=False,
     )
 
     col_g1, col_g2, col_g3 = st.columns([1.5, 1, 1])
