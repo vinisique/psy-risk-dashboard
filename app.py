@@ -19,7 +19,7 @@ st.set_page_config(
     page_title="Dashboard HSE-IT · NR-1",
     page_icon="🧠",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",  # MOBILE FIX #1: era "expanded"
 )
 
 # ─────────────────────────────────────────────
@@ -153,8 +153,105 @@ html, body, [class*="css"] {{
     align-items: center;
     justify-content: space-between;
 }}
+
+/* MOBILE FIX #2: scroll horizontal suave nas tabelas (era apenas pan-y) */
 [data-testid="stDataFrame"] iframe {{
-    touch-action: pan-y;
+    touch-action: pan-x pan-y;
+}}
+
+/* ── MOBILE FIX #4: media queries para telas ≤ 768px ── */
+@media (max-width: 768px) {{
+
+    /* Padding menor no container principal */
+    .block-container {{
+        padding: 1rem 0.75rem 2rem !important;
+    }}
+
+    /* KPI grid em 2 colunas no mobile */
+    .kpi-grid {{
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 10px !important;
+    }}
+
+    .kpi-value {{
+        font-size: 22px !important;
+    }}
+
+    /* Gráficos Plotly: altura mínima maior */
+    [data-testid="stPlotlyChart"] iframe,
+    .js-plotly-plot,
+    .plotly-graph-div {{
+        min-height: 380px !important;
+    }}
+
+    [data-testid="stPlotlyChart"] > div {{
+        min-height: 380px !important;
+    }}
+
+    /* Tabs — scroll horizontal nos labels */
+    [data-baseweb="tab-list"] {{
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+        -webkit-overflow-scrolling: touch;
+        padding: 6px !important;
+        gap: 4px !important;
+    }}
+
+    [data-baseweb="tab"] {{
+        flex-shrink: 0 !important;
+        padding: 10px 16px !important;
+        font-size: 12px !important;
+    }}
+
+    /* Tabelas — scroll suave em ambas direções */
+    [data-testid="stDataFrame"] {{
+        overflow: auto !important;
+        -webkit-overflow-scrolling: touch;
+    }}
+
+    [data-testid="stDataFrame"] iframe {{
+        touch-action: pan-x pan-y !important;
+        min-width: 100% !important;
+    }}
+
+    /* Page header empilhado verticalmente */
+    .page-header {{
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        padding: 18px 20px !important;
+        gap: 8px;
+    }}
+
+    .page-header h1 {{
+        font-size: 18px !important;
+    }}
+
+    /* Section titles menores */
+    .section-title {{
+        font-size: 11px !important;
+    }}
+}}
+
+/* ── MOBILE pequeno (≤ 480px) ── */
+@media (max-width: 480px) {{
+
+    .kpi-grid {{
+        grid-template-columns: 1fr 1fr !important;
+    }}
+
+    .kpi-value {{
+        font-size: 20px !important;
+    }}
+
+    [data-testid="stPlotlyChart"] iframe,
+    .js-plotly-plot {{
+        min-height: 420px !important;
+    }}
+
+    [data-baseweb="tab"] {{
+        padding: 8px 12px !important;
+        font-size: 11px !important;
+    }}
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -168,7 +265,8 @@ def cor_nivel(nivel: str) -> str:
 
 
 def plotly_layout(fig, height=380, margin=None):
-    m = margin or dict(l=20, r=20, t=30, b=20)
+    # MOBILE FIX #3: margem esquerda aumentada de 20 para 48 (evita corte de labels no mobile)
+    m = margin or dict(l=48, r=24, t=30, b=20)
     fig.update_layout(
         height=height,
         margin=m,
