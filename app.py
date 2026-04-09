@@ -77,6 +77,15 @@ COR_RESPOSTAS_NEG = ["#2D9E75", "#8BC4A8", "#F5A623", "#E8621A", "#D63B3B"]
 COR_RESPOSTAS_POS = ["#D63B3B", "#E8621A", "#F5A623", "#8BC4A8", "#2D9E75"]
 
 # ─────────────────────────────────────────────
+# CONFIG PLOTLY — desativa zoom e toolbar
+# ─────────────────────────────────────────────
+PLOTLY_CONFIG = dict(
+    scrollZoom=False,
+    doubleClick=False,
+    displayModeBar=False,
+)
+
+# ─────────────────────────────────────────────
 # CSS
 # ─────────────────────────────────────────────
 st.markdown(f"""
@@ -143,6 +152,9 @@ html, body, [class*="css"] {{
     display: flex;
     align-items: center;
     justify-content: space-between;
+}}
+[data-testid="stDataFrame"] iframe {{
+    touch-action: pan-y;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -476,7 +488,7 @@ with tabs[0]:
 
     col_g1, col_g2, col_g3 = st.columns([1.5, 1, 1])
     with col_g1:
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.plotly_chart(fig_gauge, use_container_width=True, config=PLOTLY_CONFIG)
     with col_g2:
         st.markdown(f"""
         <div class="kpi-card" style="margin-top:20px;">
@@ -529,7 +541,7 @@ with tabs[0]:
         yaxis=dict(title=""),
     )
     plotly_layout(fig_igrp, height=360)
-    st.plotly_chart(fig_igrp, use_container_width=True)
+    st.plotly_chart(fig_igrp, use_container_width=True, config=PLOTLY_CONFIG)
 
     cols_leg = st.columns(4)
     for i, (nivel, cor) in enumerate([("Baixo Risco", COR_VERDE), ("Risco Médio", COR_AMARELO),
@@ -568,7 +580,7 @@ with tabs[0]:
             legend=dict(orientation="v", x=1, y=0.5, font=dict(size=12)),
         )
         plotly_layout(fig_pizza, height=320)
-        st.plotly_chart(fig_pizza, use_container_width=True)
+        st.plotly_chart(fig_pizza, use_container_width=True, config=PLOTLY_CONFIG)
 
     with col_barra:
         fig_abs = go.Figure()
@@ -591,7 +603,7 @@ with tabs[0]:
             bargap=0.35,
         )
         plotly_layout(fig_abs, height=320)
-        st.plotly_chart(fig_abs, use_container_width=True)
+        st.plotly_chart(fig_abs, use_container_width=True, config=PLOTLY_CONFIG)
 
 
 # ══════════════════════════════════════════════
@@ -638,7 +650,7 @@ with tabs[1]:
             legend=dict(orientation="h", y=1.08, x=0, font=dict(size=11)),
         )
         plotly_layout(fig_stack, height=420)
-        st.plotly_chart(fig_stack, use_container_width=True)
+        st.plotly_chart(fig_stack, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.markdown('<div class="section-title">Tabela detalhada por dimensão</div>', unsafe_allow_html=True)
     if not df_dim.empty:
@@ -690,11 +702,6 @@ with tabs[2]:
             key="sel_dim_q"
         )
 
-        # ── Gráfico empilhado com cores por polaridade ────────────────────
-        # Cada questão tem sua própria paleta dependendo de ser negativa ou positiva.
-        # Estratégia: uma trace por nível de resposta; cor varia por questão.
-        # Usamos barras independentes por questão (cada uma com sua própria cor).
-
         rows_q = []
         for i, col in enumerate(col_q_detect[:35], start=1):
             vc      = base_f[col].value_counts().reindex([0,1,2,3,4], fill_value=0)
@@ -725,15 +732,12 @@ with tabs[2]:
         if sel_dim_q != "Todas":
             df_q = df_q[df_q["Dimensão"] == sel_dim_q]
 
-        # Constrói o gráfico de barras empilhadas com polarização nas cores.
-        # Como cada questão tem paleta própria, iteramos por questão e por resposta.
         qs_filtradas  = df_q["Q"].unique().tolist()
         resp_labels   = ["Nunca","Raramente","Às vezes","Frequentemente","Sempre"]
 
         fig_q = go.Figure()
         for resp_label in resp_labels:
             sub_r = df_q[df_q["Resposta"] == resp_label]
-            # Cor por questão (cada barra da mesma resposta pode ter cor diferente)
             fig_q.add_trace(go.Bar(
                 name=resp_label,
                 x=sub_r["Q"],
@@ -743,19 +747,17 @@ with tabs[2]:
                 text=sub_r["Perc"].apply(lambda v: f"{v:.0f}%" if v >= 8 else ""),
                 textposition="inside",
                 textfont=dict(size=10, color="#fff"),
-                showlegend=False,  # legenda manual abaixo
+                showlegend=False,
             ))
 
-        # Legenda manual: duas colunas (negativa / positiva)
         fig_q.update_layout(
             barmode="stack",
             xaxis=dict(title="Questão", tickangle=-45),
             yaxis=dict(title="% de respondentes", gridcolor=COR_BORDA, range=[0, 105]),
         )
         plotly_layout(fig_q, height=420, margin=dict(l=20, r=20, t=50, b=60))
-        st.plotly_chart(fig_q, use_container_width=True)
+        st.plotly_chart(fig_q, use_container_width=True, config=PLOTLY_CONFIG)
 
-        # Legenda de polarização
         col_ln, col_lp = st.columns(2)
         with col_ln:
             st.markdown("**🔴 Questões negativas** (Demandas / Relacionamentos):")
@@ -766,7 +768,6 @@ with tabs[2]:
             for label, cor in zip(resp_labels, COR_RESPOSTAS_POS):
                 st.markdown(f'<span style="background:{cor};padding:2px 8px;border-radius:4px;color:#fff;font-size:11px;">{label}</span>', unsafe_allow_html=True)
 
-        # ── Score médio por questão ───────────────────────────────────────
         st.markdown('<div class="section-title">Score médio por questão (0–4)</div>', unsafe_allow_html=True)
         scores_q = []
         for i, col in enumerate(col_q_detect[:35], start=1):
@@ -797,7 +798,7 @@ with tabs[2]:
             yaxis=dict(title="Score médio", gridcolor=COR_BORDA, range=[0, 4.8]),
         )
         plotly_layout(fig_sq, height=350, margin=dict(l=20, r=20, t=20, b=60))
-        st.plotly_chart(fig_sq, use_container_width=True)
+        st.plotly_chart(fig_sq, use_container_width=True, config=PLOTLY_CONFIG)
 
     else:
         st.warning("Colunas de questões individuais não encontradas no base.parquet.")
@@ -844,7 +845,6 @@ with tabs[3]:
                 theta=labels_closed,
                 fill="toself",
                 fillcolor=f"rgba({int(cor[1:3],16)},{int(cor[3:5],16)},{int(cor[5:7],16)},0.12)",
-                # Plotly não aceita rgba hex direto, usamos opacity
                 opacity=0.85,
                 line=dict(color=cor, width=2),
                 name=f"{grupo_nome} ({classif})",
@@ -868,9 +868,8 @@ with tabs[3]:
             title=dict(text=titulo, font=dict(size=13, color=COR_TEXTO), x=0),
         )
         plotly_layout(fig, height=480, margin=dict(l=60, r=60, t=60, b=120))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
-        # Tabela consolidada abaixo do radar
         cols_show = [col_grupo, "n_colaboradores", "NR_geral", "IGRP",
                      "perc_risco_alto", "perc_critico", "classificacao"]
         cols_show = [c for c in cols_show if c in top.columns]
@@ -898,7 +897,6 @@ with tabs[3]:
 
     for tab_c, (df_c, col_c, titulo_c) in zip(tabs_clima, mapa_clima):
         with tab_c:
-            # Slide 18: Empresa só aparece se houver mais de uma
             if col_c == "Empresa" and n_empresas <= 1:
                 st.info("Análise por empresa disponível apenas quando há mais de uma empresa nos dados.")
             else:
@@ -918,13 +916,12 @@ with tabs[4]:
             st.info("Sem dados disponíveis.")
             return
 
-        top      = df_g.nlargest(top_n, "NR_geral")
+        top      = df_g.nlargest(top_n, "NR_geral").copy()
         dims_ok  = [d for d in DIMENSOES if f"score_{d}" in top.columns]
         if not dims_ok:
             st.info("Dados de score não disponíveis.")
             return
 
-        # Calcula P discreto para cada dimensão com base no score médio do grupo
         for d in dims_ok:
             top[f"P_calc_{d}"] = top[f"score_{d}"].apply(lambda s: score_para_P(s, d))
 
@@ -957,7 +954,7 @@ with tabs[4]:
             legend=dict(orientation="h", y=-0.25, font=dict(size=10)),
         )
         plotly_layout(fig, height=max(300, top_n * 60 + 100), margin=dict(l=20, r=20, t=40, b=120))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     chart_probabilidade(setor_f, "Setor", f"Top {top_n} Setores — P por Dimensão")
     chart_probabilidade(cargo_f, "Cargo", f"Top {top_n} Cargos — P por Dimensão")
@@ -965,14 +962,10 @@ with tabs[4]:
 
 # ══════════════════════════════════════════════
 # TAB 6 — IMPACTO ORG. (Slide 20)
-# Gráfico 1: barra HORIZONTAL empilhada (4 níveis) — absenteísmo
-# Gráfico 2: barras horizontais SIMPLES por dimensão — adoecimento
 # ══════════════════════════════════════════════
 with tabs[5]:
     st.markdown('<div class="section-title">Slide 20 · Impacto Organizacional Relacionado ao Risco</div>', unsafe_allow_html=True)
 
-    # ── Gráfico 1: Top setores por NR alto → absenteísmo ─────────────────
-    # Tipo: BARRA HORIZONTAL EMPILHADA (4 níveis: Aceitável, Moderado, Importante, Crítico)
     st.markdown("##### Top setores por NR alto — Risco de Absenteísmo")
     st.caption("Barras horizontais empilhadas: distribuição dos 4 níveis de risco por setor.")
 
@@ -1010,12 +1003,10 @@ with tabs[5]:
             legend=dict(orientation="h", y=1.08, x=0),
         )
         plotly_layout(fig_abs, height=max(300, top_n * 52 + 80))
-        st.plotly_chart(fig_abs, use_container_width=True)
+        st.plotly_chart(fig_abs, use_container_width=True, config=PLOTLY_CONFIG)
 
     st.markdown('<hr style="border-color:#2A2D3E; margin:2rem 0;">', unsafe_allow_html=True)
 
-    # ── Gráfico 2: Top setores P+S alto → adoecimento ─────────────────────
-    # Tipo: BARRAS HORIZONTAIS SIMPLES (não empilhadas) — NR por dimensão
     st.markdown("##### Top setores por maior P × S — Probabilidade de Adoecimento")
     st.caption("Barras horizontais por dimensão (não empilhadas). Ordenados pela soma dos NR.")
 
@@ -1029,7 +1020,6 @@ with tabs[5]:
             cores_d = [COR_VERMELHO, COR_LARANJA, COR_AMARELO,
                        COR_VERDE, COR_ACCENT, "#B97CF7", "#5DCAA5"]
 
-            # Barras agrupadas horizontais (group, não stack)
             fig_adoec = go.Figure()
             for d, cor_d in zip(DIMENSOES, cores_d):
                 col_nr = f"NR_{d}"
@@ -1056,7 +1046,7 @@ with tabs[5]:
             plotly_layout(fig_adoec,
                           height=max(300, top_n * 65 + 100),
                           margin=dict(l=20, r=20, t=20, b=100))
-            st.plotly_chart(fig_adoec, use_container_width=True)
+            st.plotly_chart(fig_adoec, use_container_width=True, config=PLOTLY_CONFIG)
 
 
 # ══════════════════════════════════════════════
@@ -1097,14 +1087,13 @@ with tabs[6]:
             yaxis=dict(title="", autorange="reversed"),
         )
         plotly_layout(fig_hm, height=max(400, len(y_hm) * 32 + 80))
-        st.plotly_chart(fig_hm, use_container_width=True)
+        st.plotly_chart(fig_hm, use_container_width=True, config=PLOTLY_CONFIG)
     else:
         st.info(f"Dados de {visao_hm} não disponíveis.")
 
 
 # ══════════════════════════════════════════════
 # TAB 8 — POR CARGO (Slide 22)
-# Adicionado: N Respostas e Classificação de Risco Predominante na tabela
 # ══════════════════════════════════════════════
 with tabs[7]:
     st.markdown('<div class="section-title">Slide 22 · Análise Detalhada por Cargo</div>', unsafe_allow_html=True)
@@ -1141,7 +1130,6 @@ with tabs[7]:
         </div>
         """, unsafe_allow_html=True)
 
-        # Radar
         scores_cargo  = []
         labels_radar  = []
         for d in DIMENSOES:
@@ -1170,12 +1158,10 @@ with tabs[7]:
                 showlegend=False,
             )
             plotly_layout(fig_radar, height=380)
-            st.plotly_chart(fig_radar, use_container_width=True)
+            st.plotly_chart(fig_radar, use_container_width=True, config=PLOTLY_CONFIG)
 
-        # ── Tabela NR por dimensão com colunas completas ──────────────────
         st.markdown('<div class="section-title">NR por Dimensão — Detalhamento</div>', unsafe_allow_html=True)
 
-        # Monta tabela com: Dimensão, N Respostas, Score HSE-IT, P, S, Classificação de Risco, NR
         tab_dim_cargo = []
         base_cargo    = base_f[base_f["Informe seu cargo"] == cargo_sel]
         n_resp_dim    = len(base_cargo)
@@ -1184,7 +1170,6 @@ with tabs[7]:
             score_val = float(row_cargo.get(f"score_{d}", 0))
             nr_val    = float(row_cargo.get(f"NR_{d}", 0))
             p_val     = score_para_P(score_val, d)
-            # S = NR / P (evita divisão por zero)
             s_val     = round(nr_val / p_val, 2) if p_val > 0 else 0.0
             class_val = score_para_classificacao(score_val, d)
 
@@ -1201,7 +1186,6 @@ with tabs[7]:
 
         df_dim_cargo = pd.DataFrame(tab_dim_cargo)
 
-        # Classificação predominante = a que aparece mais nas dimensões
         class_counts   = df_dim_cargo["Classificação de Risco"].value_counts()
         class_predom   = class_counts.index[0] if not class_counts.empty else "—"
         cor_predom     = cor_nivel(class_predom)
@@ -1218,7 +1202,6 @@ with tabs[7]:
         </div>
         """, unsafe_allow_html=True)
 
-        cols_style = ["Score HSE-IT", "Probabilidade (P)", "Severidade (S)", "NR (P × S)"]
         styled_cargo = (
             df_dim_cargo.style
             .map(_nr_row_color, subset=["NR (P × S)"])
@@ -1228,7 +1211,6 @@ with tabs[7]:
         )
         st.dataframe(styled_cargo, use_container_width=True, hide_index=True)
 
-        # Distribuição individual
         st.markdown(f'<div class="section-title">Distribuição individual ({n_resp_dim} respondentes)</div>',
                     unsafe_allow_html=True)
 
@@ -1247,7 +1229,7 @@ with tabs[7]:
             showlegend=False,
         )
         plotly_layout(fig_dist_c, height=280)
-        st.plotly_chart(fig_dist_c, use_container_width=True)
+        st.plotly_chart(fig_dist_c, use_container_width=True, config=PLOTLY_CONFIG)
 
     else:
         st.info("Dados de cargo não disponíveis.")
@@ -1255,7 +1237,6 @@ with tabs[7]:
 
 # ══════════════════════════════════════════════
 # TAB 9 — PGR (Slide 23)
-# Adicionado: Score HSE-IT, P, S, Classificação de Risco por dimensão
 # ══════════════════════════════════════════════
 with tabs[8]:
     st.markdown('<div class="section-title">Slide 23 · PGR — Programa de Gerenciamento de Riscos</div>', unsafe_allow_html=True)
@@ -1272,9 +1253,6 @@ with tabs[8]:
 
     if df_pgr_src is not None and not df_pgr_src.empty:
 
-        # ── Monta tabela PGR completa ──────────────────────────────────────
-        # Colunas: Grupo | N | Score HSE-IT (por dim) | P (por dim) | S (por dim) |
-        #          Classificação de Risco (por dim) | NR (por dim) | NR Geral | Classificação Geral
         rows_pgr = []
         for _, row in df_pgr_src.iterrows():
             rec = {
@@ -1298,7 +1276,6 @@ with tabs[8]:
 
         df_pgr_full = pd.DataFrame(rows_pgr).sort_values("NR Geral", ascending=False).reset_index(drop=True)
 
-        # Seleção de colunas a exibir (controla complexidade visual)
         col_view = st.radio(
             "Visualizar:",
             ["Resumo (NR por dimensão)", "Score + P + S + Classificação", "Completo"],
@@ -1322,7 +1299,6 @@ with tabs[8]:
         cols_show_pgr = [c for c in cols_show_pgr if c in df_pgr_full.columns]
         df_pgr_show   = df_pgr_full[cols_show_pgr]
 
-        # Estilização
         num_cols_fmt  = {c: "{:.2f}" for c in (nr_cols + score_cols + s_cols) if c in df_pgr_show.columns}
         style_pgr = df_pgr_show.style.format(num_cols_fmt)
 
@@ -1372,7 +1348,7 @@ with tabs[8]:
             yaxis=dict(title="", autorange="reversed"),
         )
         plotly_layout(fig_pgr, height=max(400, len(y_pgr) * 30 + 80))
-        st.plotly_chart(fig_pgr, use_container_width=True)
+        st.plotly_chart(fig_pgr, use_container_width=True, config=PLOTLY_CONFIG)
 
         st.markdown(f"""
         <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:{COR_MUTED};margin-top:8px;">
