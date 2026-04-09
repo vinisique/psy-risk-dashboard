@@ -178,6 +178,7 @@ def plotly_layout(fig, height=380, margin=None):
         legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=COR_BORDA, font=dict(size=11)),
         xaxis=dict(gridcolor=COR_BORDA, zerolinecolor=COR_BORDA),
         yaxis=dict(gridcolor=COR_BORDA, zerolinecolor=COR_BORDA),
+        dragmode=False,
     )
     return fig
 
@@ -484,6 +485,7 @@ with tabs[0]:
         margin=dict(l=40, r=40, t=60, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         font=dict(family="DM Sans", color=COR_TEXTO),
+        dragmode=False,
     )
 
     col_g1, col_g2, col_g3 = st.columns([1.5, 1, 1])
@@ -1156,6 +1158,7 @@ with tabs[7]:
                                    tickfont=dict(size=10, color=COR_MUTED)),
                 ),
                 showlegend=False,
+                dragmode=False,
             )
             plotly_layout(fig_radar, height=380)
             st.plotly_chart(fig_radar, use_container_width=True, config=PLOTLY_CONFIG)
