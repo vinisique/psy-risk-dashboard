@@ -843,7 +843,7 @@ with tabs[3]:
                 r=scores_r_closed,
                 theta=labels_closed,
                 fill="toself",
-                fillcolor=cor.replace("#", "rgba(").replace("rgba(", "rgba(") + ",0.08)",
+                fillcolor=f"rgba({int(cor[1:3],16)},{int(cor[3:5],16)},{int(cor[5:7],16)},0.12)",
                 # Plotly não aceita rgba hex direto, usamos opacity
                 opacity=0.85,
                 line=dict(color=cor, width=2),
