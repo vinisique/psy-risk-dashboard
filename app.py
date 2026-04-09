@@ -51,7 +51,7 @@ RISCO_CORES = {
 
 DIMENSOES = [
     "Demandas", "Controle", "Apoio_Chefia",
-    "Apoio_Colegas", "Relacionamentos", "Cargo", "Comunicacao_Mudancas"
+    "Apoio_Colegas", "Relacionamentos", "Cargo", "Mudanca"  # ← correto
 ]
 DIMENSOES_LABEL = {
     "Demandas": "Demandas",
@@ -60,7 +60,7 @@ DIMENSOES_LABEL = {
     "Apoio_Colegas": "Apoio dos Colegas",
     "Relacionamentos": "Relacionamentos",
     "Cargo": "Cargo / Função",
-    "Comunicacao_Mudancas": "Comunicação e Mudanças",
+    "Mudanca": "Comunicação e Mudanças",
 }
 DIM_NEGATIVAS = {"Demandas", "Relacionamentos"}
 
