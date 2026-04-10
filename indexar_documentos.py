@@ -51,6 +51,7 @@ DOCUMENTOS = {
     "NR-7_PCMSO"             : "nr-07-atualizada-2022-1.pdf",
     "NR-17_Ergonomia"        : "nr-17-atualizada-2023.pdf",
     "Portaria_MTE_1419_2024" : "portaria-mte-no-1-419-nr-01-gro-nova-redacao.pdf",
+    "Manual_GRO_PGR_NR1"     : "Manual_GRO_PGR_da_NR_1.pdf",
 }
 
 # ─────────────────────────────────────────────
