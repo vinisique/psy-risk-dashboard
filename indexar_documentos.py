@@ -124,7 +124,7 @@ for doc_id, filename in DOCUMENTOS.items():
 
     # Gera embeddings em lote
     embeddings = model.encode(
-        chunks,
+        [f"passage: {c}" for c in chunks],
         batch_size=32,
         show_progress_bar=True,
         normalize_embeddings=True
