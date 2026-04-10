@@ -57,8 +57,8 @@ DOCUMENTOS = {
 # ─────────────────────────────────────────────
 # INICIALIZAÇÃO
 # ─────────────────────────────────────────────
-print("🔧 Carregando modelo de embeddings (MiniLM)...")
-model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+print("🔧 Carregando modelo de embeddings (multilingual-e5-large)...")
+model = SentenceTransformer("intfloat/multilingual-e5-large")
 
 print("🐘 Conectando ao PostgreSQL...")
 conn = psycopg2.connect(**DB_CONFIG)
@@ -76,7 +76,7 @@ cur.execute("""
         filename    TEXT NOT NULL,
         chunk_idx   INTEGER NOT NULL,
         texto       TEXT NOT NULL,
-        embedding   vector(384)             -- dimensão do MiniLM-L6-v2
+        embedding   vector(1024)            -- dimensão do multilingual-e5-large
     );
 """)
 # Índice HNSW para busca rápida por similaridade
