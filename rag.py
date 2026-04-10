@@ -2,24 +2,27 @@
 rag.py — Módulo RAG · Agente HSE-IT · Vivamente 360°
 ──────────────────────────────────────────────────────
 Recupera trechos relevantes de NR-1, ISO 45003, NR-17, etc.
-usando busca semântica no Pinecone + embeddings MiniLM (gratuito).
+usando busca semântica no PostgreSQL + pgvector + embeddings MiniLM (gratuito).
 
 Secrets necessários no Streamlit Cloud:
-    PINECONE_API_KEY = "..."
-    INDEX_NAME       = "hse-normas"   # opcional, default abaixo
+    PG_HOST     = "..."
+    PG_PORT     = "5432"
+    PG_DB       = "hse_normas"
+    PG_USER     = "..."
+    PG_PASSWORD = "..."
 """
 
 import streamlit as st
-from pinecone import Pinecone
+import psycopg2
+from pgvector.psycopg2 import register_vector
 from sentence_transformers import SentenceTransformer
 
 # ─────────────────────────────────────────────
 # CONSTANTES
 # ─────────────────────────────────────────────
-DEFAULT_INDEX_NAME   = "hse-normas"
-EMBEDDING_MODEL      = "sentence-transformers/all-MiniLM-L6-v2"
-RELEVANCE_THRESHOLD  = 0.50   # score mínimo de cosine similarity
-DEFAULT_TOP_K        = 5      # quantos trechos recuperar por query
+EMBEDDING_MODEL     = "sentence-transformers/all-MiniLM-L6-v2"
+RELEVANCE_THRESHOLD = 0.50   # score mínimo de cosine similarity
+DEFAULT_TOP_K       = 5      # quantos trechos recuperar por query
 
 # Labels amigáveis para exibição
 DOC_LABELS = {
@@ -32,26 +35,30 @@ DOC_LABELS = {
     "NR-7_PCMSO"             : "NR-7 (PCMSO)",
     "NR-17_Ergonomia"        : "NR-17 (Ergonomia)",
     "Portaria_MTE_1419_2024" : "Portaria MTE nº 1.419/2024",
+    "Manual_GRO_PGR_NR1"     : "Manual GRO/PGR da NR-1",
 }
 
 
 # ─────────────────────────────────────────────
 # INICIALIZAÇÃO COM CACHE
-# O modelo (90MB) e a conexão Pinecone são carregados
+# O modelo (90MB) e a conexão ao banco são carregados
 # uma única vez e reutilizados em todas as requisições.
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner="📚 Carregando base normativa...")
 def _get_resources():
-    """Retorna (model, pinecone_index) com cache de sessão."""
+    """Retorna (model, conn) com cache de sessão."""
     model = SentenceTransformer(EMBEDDING_MODEL)
 
-    api_key    = st.secrets["PINECONE_API_KEY"]
-    index_name = st.secrets.get("INDEX_NAME", DEFAULT_INDEX_NAME)
+    conn = psycopg2.connect(
+        host=st.secrets["PG_HOST"],
+        port=int(st.secrets.get("PG_PORT", 5432)),
+        dbname=st.secrets["PG_DB"],
+        user=st.secrets["PG_USER"],
+        password=st.secrets["PG_PASSWORD"],
+    )
+    register_vector(conn)
 
-    pc    = Pinecone(api_key=api_key)
-    index = pc.Index(index_name)
-
-    return model, index
+    return model, conn
 
 
 # ─────────────────────────────────────────────
@@ -73,10 +80,8 @@ def buscar_contexto_normativo(
         return ""
 
     try:
-        model, index = _get_resources()
+        model, conn = _get_resources()
     except Exception as e:
-        # Se o Pinecone não estiver configurado, falha silenciosa
-        # para não quebrar o agente
         st.warning(f"⚠️ RAG indisponível: {e}")
         return ""
 
@@ -86,34 +91,37 @@ def buscar_contexto_normativo(
         normalize_embeddings=True,
     ).tolist()
 
-    # Busca no Pinecone
+    # Busca no pgvector por similaridade de cosseno
     try:
-        results = index.query(
-            vector=query_vector,
-            top_k=top_k,
-            include_metadata=True,
-        )
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                documento,
+                texto,
+                1 - (embedding <=> %s::vector) AS score
+            FROM documentos_chunks
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s;
+        """, (query_vector, query_vector, top_k))
+
+        rows = cur.fetchall()
+        cur.close()
     except Exception as e:
         st.warning(f"⚠️ Erro na busca normativa: {e}")
         return ""
 
-    matches = results.get("matches", [])
-    if not matches:
+    if not rows:
         return ""
 
     # Filtra por relevância e formata
     trechos = []
     docs_usados = set()
 
-    for match in matches:
-        score = match.get("score", 0)
+    for doc_id, texto, score in rows:
         if score < threshold:
             continue
 
-        meta   = match.get("metadata", {})
-        doc_id = meta.get("documento", "Desconhecido")
-        texto  = meta.get("texto", "").strip()
-
+        texto = texto.strip()
         if not texto:
             continue
 
@@ -147,16 +155,29 @@ def buscar_contexto_normativo(
 # ─────────────────────────────────────────────
 def listar_documentos_indexados() -> dict:
     """
-    Retorna estatísticas do índice Pinecone.
+    Retorna estatísticas do banco pgvector.
     Use no Streamlit para mostrar o status da base normativa.
     """
     try:
-        _, index = _get_resources()
-        stats = index.describe_index_stats()
+        _, conn = _get_resources()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM documentos_chunks;")
+        total = cur.fetchone()[0]
+
+        cur.execute("""
+            SELECT documento, COUNT(*) AS chunks
+            FROM documentos_chunks
+            GROUP BY documento
+            ORDER BY documento;
+        """)
+        por_documento = {row[0]: row[1] for row in cur.fetchall()}
+        cur.close()
+
         return {
-            "total_vetores": stats.get("total_vector_count", 0),
-            "namespaces"   : stats.get("namespaces", {}),
-            "status"       : "online",
+            "total_vetores" : total,
+            "por_documento" : por_documento,
+            "status"        : "online",
         }
     except Exception as e:
         return {"status": "offline", "erro": str(e)}
