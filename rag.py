@@ -2,7 +2,8 @@
 rag.py — Módulo RAG · Agente HSE-IT · Vivamente 360°
 ──────────────────────────────────────────────────────
 Recupera trechos relevantes de NR-1, ISO 45003, NR-17, etc.
-usando busca semântica no PostgreSQL + pgvector + embeddings MiniLM (gratuito).
+usando busca semântica no PostgreSQL + pgvector + embeddings
+multilingual-e5-large (mesmo modelo usado na indexação).
 
 Secrets necessários no Streamlit Cloud:
     PG_HOST     = "..."
@@ -20,7 +21,8 @@ from sentence_transformers import SentenceTransformer
 # ─────────────────────────────────────────────
 # CONSTANTES
 # ─────────────────────────────────────────────
-EMBEDDING_MODEL     = "sentence-transformers/all-MiniLM-L6-v2"
+# Mesmo modelo usado no indexador — dimensão 1024
+EMBEDDING_MODEL     = "intfloat/multilingual-e5-large"
 RELEVANCE_THRESHOLD = 0.50   # score mínimo de cosine similarity
 DEFAULT_TOP_K       = 5      # quantos trechos recuperar por query
 
@@ -41,7 +43,7 @@ DOC_LABELS = {
 
 # ─────────────────────────────────────────────
 # INICIALIZAÇÃO COM CACHE
-# O modelo (90MB) e a conexão ao banco são carregados
+# O modelo (~560MB) e a conexão ao banco são carregados
 # uma única vez e reutilizados em todas as requisições.
 # ─────────────────────────────────────────────
 @st.cache_resource(show_spinner="📚 Carregando base normativa...")
@@ -75,6 +77,10 @@ def buscar_contexto_normativo(
     no system/context prompt da Groq.
 
     Retorna string vazia se nenhum trecho atingir o threshold.
+
+    Nota: o prefixo "query: " é obrigatório para o modelo e5 —
+    ele sinaliza que o texto é uma consulta (vs. "passage: " nos docs indexados),
+    o que melhora significativamente a qualidade semântica da busca.
     """
     if not pergunta or not pergunta.strip():
         return ""
@@ -85,9 +91,9 @@ def buscar_contexto_normativo(
         st.warning(f"⚠️ RAG indisponível: {e}")
         return ""
 
-    # Gera embedding da pergunta
+    # Gera embedding da pergunta com prefixo obrigatório do modelo e5
     query_vector = model.encode(
-        pergunta,
+        f"query: {pergunta}",
         normalize_embeddings=True,
     ).tolist()
 
