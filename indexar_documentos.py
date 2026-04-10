@@ -1,32 +1,45 @@
 """
-indexar_documentos.py
-─────────────────────
-Roda UMA VEZ no seu PC para popular o índice Pinecone.
-Não vai para o GitHub (só o rag.py vai).
+indexar_documentos_pgvector.py
+──────────────────────────────
+Roda UMA VEZ no seu PC para popular o índice no PostgreSQL + pgvector.
 
 Pré-requisitos:
-    pip install pinecone-client sentence-transformers pymupdf langchain-text-splitters
+    pip install sentence-transformers pymupdf langchain-text-splitters psycopg2-binary pgvector
 
 Uso:
-    python indexar_documentos.py
+    python indexar_documentos_pgvector.py
 """
 
 import os
+import sys
 import fitz  # pymupdf
-from pinecone import Pinecone, ServerlessSpec
+import psycopg2
+from pgvector.psycopg2 import register_vector
 from sentence_transformers import SentenceTransformer
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # ─────────────────────────────────────────────
-# CONFIGURAÇÃO — preencha antes de rodar
+# CONFIGURAÇÃO — lida de variáveis de ambiente
+# Configure em: GitHub → Settings → Codespaces → Secrets
 # ─────────────────────────────────────────────
-PINECONE_API_KEY = "sua-chave-pinecone-aqui"
-INDEX_NAME       = "hse-normas"
-PASTA_NORMAS     = "./normas"   # pasta com os PDFs
+DB_CONFIG = {
+    "host":     os.environ.get("PG_HOST", "localhost"),
+    "port":     int(os.environ.get("PG_PORT", "5432")),
+    "dbname":   os.environ.get("PG_DB", "hse_normas"),
+    "user":     os.environ.get("PG_USER", "admin"),
+    "password": os.environ.get("PG_PASSWORD", ""),
+}
+
+# Aborta se a senha não estiver definida
+if not DB_CONFIG["password"]:
+    print("❌ Variável de ambiente PG_PASSWORD não definida.")
+    print("   Configure em: GitHub → Settings → Codespaces → Secrets")
+    sys.exit(1)
+
+PASTA_NORMAS = "./normas"   # pasta com os PDFs
 
 # ─────────────────────────────────────────────
 # MAPEAMENTO: nome amigável → arquivo PDF
-# (ajuste os nomes de arquivo conforme salvou)
 # ─────────────────────────────────────────────
 DOCUMENTOS = {
     "ISO_45003_Preview"      : "45003_2021_wms_preview.pdf",
@@ -46,24 +59,33 @@ DOCUMENTOS = {
 print("🔧 Carregando modelo de embeddings (MiniLM)...")
 model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-print("🌲 Conectando ao Pinecone...")
-pc = Pinecone(api_key=PINECONE_API_KEY)
+print("🐘 Conectando ao PostgreSQL...")
+conn = psycopg2.connect(**DB_CONFIG)
+register_vector(conn)   # habilita o tipo vector do pgvector
+cur = conn.cursor()
 
-# Cria o índice se ainda não existir
-existing = [idx.name for idx in pc.list_indexes()]
-if INDEX_NAME not in existing:
-    print(f"📦 Criando índice '{INDEX_NAME}'...")
-    pc.create_index(
-        name=INDEX_NAME,
-        dimension=384,          # dimensão do MiniLM-L6-v2
-        metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
-    )
-    print("✅ Índice criado.")
-else:
-    print(f"✅ Índice '{INDEX_NAME}' já existe.")
-
-index = pc.Index(INDEX_NAME)
+# Garante extensão e tabela
+print("📦 Criando extensão e tabela (se não existirem)...")
+cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS documentos_chunks (
+        id          SERIAL PRIMARY KEY,
+        chunk_id    TEXT UNIQUE NOT NULL,   -- ex: ISO_45003_Preview_chunk_0001
+        documento   TEXT NOT NULL,
+        filename    TEXT NOT NULL,
+        chunk_idx   INTEGER NOT NULL,
+        texto       TEXT NOT NULL,
+        embedding   vector(384)             -- dimensão do MiniLM-L6-v2
+    );
+""")
+# Índice HNSW para busca rápida por similaridade
+cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_embedding_hnsw
+    ON documentos_chunks
+    USING hnsw (embedding vector_cosine_ops);
+""")
+conn.commit()
+print("✅ Tabela e índice prontos.")
 
 # Splitter de texto
 splitter = RecursiveCharacterTextSplitter(
@@ -99,7 +121,7 @@ for doc_id, filename in DOCUMENTOS.items():
     chunks = splitter.split_text(texto_completo)
     print(f"   → {len(chunks)} chunks gerados")
 
-    # Gera embeddings em lote (mais rápido)
+    # Gera embeddings em lote
     embeddings = model.encode(
         chunks,
         batch_size=32,
@@ -107,26 +129,31 @@ for doc_id, filename in DOCUMENTOS.items():
         normalize_embeddings=True
     )
 
-    # Monta vetores para o Pinecone
-    vectors = []
-    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-        vectors.append({
-            "id": f"{doc_id}_chunk_{i:04d}",
-            "values": embedding.tolist(),
-            "metadata": {
-                "documento": doc_id,
-                "texto": chunk,
-                "filename": filename,
-                "chunk_idx": i,
-            }
-        })
-
-    # Upsert em lotes de 100
+    # Insere no PostgreSQL em lotes
     BATCH = 100
-    for start in range(0, len(vectors), BATCH):
-        batch = vectors[start:start + BATCH]
-        index.upsert(vectors=batch)
-        print(f"   → Enviados {min(start + BATCH, len(vectors))}/{len(vectors)} vetores")
+    rows = []
+    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        rows.append((
+            f"{doc_id}_chunk_{i:04d}",  # chunk_id único
+            doc_id,
+            filename,
+            i,
+            chunk,
+            embedding.tolist(),
+        ))
+
+    for start in range(0, len(rows), BATCH):
+        batch = rows[start:start + BATCH]
+        cur.executemany("""
+            INSERT INTO documentos_chunks
+                (chunk_id, documento, filename, chunk_idx, texto, embedding)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (chunk_id) DO UPDATE
+                SET texto     = EXCLUDED.texto,
+                    embedding = EXCLUDED.embedding;
+        """, batch)
+        conn.commit()
+        print(f"   → Inseridos {min(start + BATCH, len(rows))}/{len(rows)} chunks")
 
     total_chunks += len(chunks)
     print(f"   ✅ {doc_id} indexado com sucesso.")
@@ -134,13 +161,22 @@ for doc_id, filename in DOCUMENTOS.items():
 # ─────────────────────────────────────────────
 # RESULTADO FINAL
 # ─────────────────────────────────────────────
-stats = index.describe_index_stats()
+cur.execute("SELECT COUNT(*) FROM documentos_chunks;")
+total_no_banco = cur.fetchone()[0]
+
+cur.close()
+conn.close()
+
 print(f"\n{'='*50}")
 print(f"✅ Indexação concluída!")
 print(f"   Total de chunks enviados : {total_chunks}")
-print(f"   Vetores no Pinecone      : {stats['total_vector_count']}")
-print(f"   Índice                   : {INDEX_NAME}")
+print(f"   Total no banco           : {total_no_banco}")
 print(f"{'='*50}")
-print("\nAgora adicione ao seu .streamlit/secrets.toml:")
-print("  PINECONE_API_KEY = \"sua-chave\"")
-print("  INDEX_NAME       = \"hse-normas\"")
+print("\nExemplo de busca por similaridade:")
+print("""
+    SELECT texto, documento,
+           1 - (embedding <=> '[...vetor...]') AS similaridade
+    FROM documentos_chunks
+    ORDER BY embedding <=> '[...vetor...]'
+    LIMIT 5;
+""")
