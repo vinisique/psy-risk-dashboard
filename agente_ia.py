@@ -1070,6 +1070,75 @@ DADOS_HASH = _make_hash({
     "empresa": sorted(sel_empresa), "setor": sorted(sel_setor), "cargo": sorted(sel_cargo),
 })
 
+# ─────────────────────────────────────────────
+# LISTA DE PROBLEMAS — gerada globalmente para
+# alimentar o card de acesso rápido e a Tab 10
+# ─────────────────────────────────────────────
+if st.session_state.problems_hash != DADOS_HASH:
+    st.session_state.problems_cache = None
+    st.session_state.problems_hash  = DADOS_HASH
+
+def gerar_lista_problemas():
+    problemas = []
+
+    # Setores
+    for _, row in setor_f.iterrows():
+        nr = float(row.get("NR_geral", 0))
+        if nr < 1: continue
+        classe = classificar_NR(nr)
+        n_col  = int(row.get("n_colaboradores", 0))
+        perc_a = float(row.get("perc_risco_alto", 0)) * 100
+        worst_dim, worst_nr = "", 0
+        for d in DIMENSOES:
+            v = float(row.get(f"NR_{d}", 0))
+            if v > worst_nr: worst_nr = v; worst_dim = DIMENSOES_LABEL[d]
+        problemas.append({
+            "id": f"setor_{row['Setor']}", "tipo": "Setor", "grupo": row["Setor"],
+            "nr": nr, "classe": classe, "n": n_col, "perc_alto": perc_a,
+            "worst_dim": worst_dim, "worst_nr": worst_nr,
+            "descricao": (f"Setor '{row['Setor']}' com NR={nr:.1f} ({classe}) — "
+                          f"{perc_a:.0f}% dos {n_col} colaboradores em risco alto/crítico. "
+                          f"Dimensão mais crítica: {worst_dim} (NR={worst_nr:.1f})."),
+            "plan": None,
+        })
+
+    # Dimensões
+    for d in DIMENSOES:
+        col_s = f"score_{d}"
+        if col_s not in base_f.columns: continue
+        score_v  = base_f[col_s].mean()
+        classe   = score_para_classificacao(score_v, d)
+        perc_alt = (base_f[f"class_{d}"] == "Alto Risco").mean() * 100 if f"class_{d}" in base_f.columns else 0
+        problemas.append({
+            "id": f"dim_{d}", "tipo": "Dimensão", "grupo": DIMENSOES_LABEL[d],
+            "nr": score_para_P(score_v, d) * 4.0, "classe": classe, "n": n_total, "perc_alto": perc_alt,
+            "worst_dim": DIMENSOES_LABEL[d], "worst_nr": score_v,
+            "descricao": (f"Dimensão '{DIMENSOES_LABEL[d]}' com score={score_v:.2f} ({classe}) — "
+                          f"{perc_alt:.0f}% dos respondentes em Alto Risco nessa dimensão."),
+            "plan": None,
+        })
+
+    # Cargos
+    for _, row in cargo_f.iterrows():
+        nr = float(row.get("NR_geral", 0))
+        if nr < 1: continue
+        classe = classificar_NR(nr)
+        n_col  = int(row.get("n_colaboradores", 0))
+        perc_a = float(row.get("perc_risco_alto", 0)) * 100
+        problemas.append({
+            "id": f"cargo_{row['Cargo']}", "tipo": "Cargo", "grupo": row["Cargo"],
+            "nr": nr, "classe": classe, "n": n_col, "perc_alto": perc_a,
+            "worst_dim": "", "worst_nr": 0,
+            "descricao": (f"Cargo '{row['Cargo']}' com NR={nr:.1f} ({classe}) — "
+                          f"{perc_a:.0f}% dos {n_col} profissionais em risco alto/crítico."),
+            "plan": None,
+        })
+
+    return sorted(problemas, key=lambda x: -x["nr"])[:50]
+
+if st.session_state.problems_cache is None:
+    st.session_state.problems_cache = gerar_lista_problemas()
+
 st.markdown(f"""
 <div class="page-header">
   <div>
@@ -2246,72 +2315,7 @@ with tabs[9]:
     </div>
     """, unsafe_allow_html=True)
 
-    # Invalida cache se dados mudaram
-    if st.session_state.problems_hash != DADOS_HASH:
-        st.session_state.problems_cache = None
-        st.session_state.problems_hash  = DADOS_HASH
-
-    def gerar_lista_problemas():
-        problemas = []
-
-        # Setores
-        for _, row in setor_f.iterrows():
-            nr = float(row.get("NR_geral", 0))
-            if nr < 1: continue
-            classe = classificar_NR(nr)
-            n_col  = int(row.get("n_colaboradores", 0))
-            perc_a = float(row.get("perc_risco_alto", 0)) * 100
-            worst_dim, worst_nr = "", 0
-            for d in DIMENSOES:
-                v = float(row.get(f"NR_{d}", 0))
-                if v > worst_nr: worst_nr = v; worst_dim = DIMENSOES_LABEL[d]
-            problemas.append({
-                "id": f"setor_{row['Setor']}", "tipo": "Setor", "grupo": row["Setor"],
-                "nr": nr, "classe": classe, "n": n_col, "perc_alto": perc_a,
-                "worst_dim": worst_dim, "worst_nr": worst_nr,
-                "descricao": (f"Setor '{row['Setor']}' com NR={nr:.1f} ({classe}) — "
-                              f"{perc_a:.0f}% dos {n_col} colaboradores em risco alto/crítico. "
-                              f"Dimensão mais crítica: {worst_dim} (NR={worst_nr:.1f})."),
-                "plan": None,
-            })
-
-        # Dimensões
-        for d in DIMENSOES:
-            col_s = f"score_{d}"
-            if col_s not in base_f.columns: continue
-            score_v  = base_f[col_s].mean()
-            classe   = score_para_classificacao(score_v, d)
-            perc_alt = (base_f[f"class_{d}"] == "Alto Risco").mean() * 100 if f"class_{d}" in base_f.columns else 0
-            problemas.append({
-                "id": f"dim_{d}", "tipo": "Dimensão", "grupo": DIMENSOES_LABEL[d],
-                "nr": score_para_P(score_v, d) * 4.0, "classe": classe, "n": n_total, "perc_alto": perc_alt,
-                "worst_dim": DIMENSOES_LABEL[d], "worst_nr": score_v,
-                "descricao": (f"Dimensão '{DIMENSOES_LABEL[d]}' com score={score_v:.2f} ({classe}) — "
-                              f"{perc_alt:.0f}% dos respondentes em Alto Risco nessa dimensão."),
-                "plan": None,
-            })
-
-        # Cargos
-        for _, row in cargo_f.iterrows():
-            nr = float(row.get("NR_geral", 0))
-            if nr < 1: continue
-            classe = classificar_NR(nr)
-            n_col  = int(row.get("n_colaboradores", 0))
-            perc_a = float(row.get("perc_risco_alto", 0)) * 100
-            problemas.append({
-                "id": f"cargo_{row['Cargo']}", "tipo": "Cargo", "grupo": row["Cargo"],
-                "nr": nr, "classe": classe, "n": n_col, "perc_alto": perc_a,
-                "worst_dim": "", "worst_nr": 0,
-                "descricao": (f"Cargo '{row['Cargo']}' com NR={nr:.1f} ({classe}) — "
-                              f"{perc_a:.0f}% dos {n_col} profissionais em risco alto/crítico."),
-                "plan": None,
-            })
-
-        return sorted(problemas, key=lambda x: -x["nr"])[:50]
-
-    if st.session_state.problems_cache is None:
-        st.session_state.problems_cache = gerar_lista_problemas()
-
+    # Cache já preenchido globalmente antes das tabs
     problemas = st.session_state.problems_cache
 
     if not problemas:
