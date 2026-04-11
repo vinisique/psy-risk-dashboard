@@ -14,6 +14,7 @@ import json
 import os
 import re
 import requests
+import traceback
 from datetime import datetime
 
 # ── Módulo compartilhado com o dashboard ──────────────────────────────────────
@@ -49,6 +50,8 @@ if "editing_plan_idx" not in st.session_state:
     st.session_state.editing_plan_idx = None
 if "plan_edit_state" not in st.session_state:
     st.session_state.plan_edit_state = {}
+if "debug_log" not in st.session_state:
+    st.session_state.debug_log = []
 
 # ─────────────────────────────────────────────
 # CHAVE API
@@ -74,6 +77,30 @@ COR_TEXTO    = "#E8EAF0"
 COR_MUTED    = "#6B7280"
 COR_ACCENT   = "#4F8EF7"
 COR_PURPLE   = "#A78BFA"
+
+# ─────────────────────────────────────────────
+# DEBUG LOGGER — persiste no session_state
+# ─────────────────────────────────────────────
+def debug_log(level: str, msg: str, detail: str = ""):
+    """
+    Persiste um evento de debug no session_state.debug_log.
+    level: "INFO" | "OK" | "WARN" | "ERROR"
+    msg:    linha curta de resumo
+    detail: conteúdo longo (JSON raw, traceback, etc.)
+    """
+    ts = datetime.now().strftime("%H:%M:%S")
+    icons = {"INFO": "🔵", "OK": "🟢", "WARN": "🟡", "ERROR": "🔴"}
+    st.session_state.debug_log.append({
+        "ts":     ts,
+        "level":  level,
+        "icon":   icons.get(level, "⚪"),
+        "msg":    msg,
+        "detail": detail,
+    })
+    # Mantém apenas os últimos 100 eventos para não vazar memória
+    if len(st.session_state.debug_log) > 100:
+        st.session_state.debug_log = st.session_state.debug_log[-100:]
+
 
 # ─────────────────────────────────────────────
 # CSS
@@ -272,6 +299,26 @@ html, body, [class*="css"] {{
     background: linear-gradient(90deg, {COR_ACCENT}, {COR_PURPLE});
     transition: width .4s ease;
 }}
+
+/* DEBUG LOG ENTRIES */
+.debug-entry {{
+    border-radius: 0 6px 6px 0;
+    margin-bottom: 6px;
+    padding: 6px 8px;
+}}
+.debug-detail {{
+    margin-top: 4px;
+    background: #0F1117;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: {COR_MUTED};
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 120px;
+    overflow-y: auto;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -398,6 +445,7 @@ def fix_plan_with_retry(raw: str, messages: list, api_key: str, max_retries: int
         if result["tipo"] == "plano_acao" and result.get("acoes"):
             return result
         if attempt < max_retries - 1:
+            debug_log("WARN", f"Retry {attempt + 1}/{max_retries} — plano inválido, solicitando correção à API")
             retry_messages = messages + [
                 {"role": "assistant", "content": current_raw},
                 {"role": "user", "content":
@@ -407,7 +455,9 @@ def fix_plan_with_retry(raw: str, messages: list, api_key: str, max_retries: int
             ]
             try:
                 current_raw = call_groq(retry_messages, api_key)
-            except Exception:
+                debug_log("INFO", f"Retry {attempt + 1} — resposta recebida", current_raw[:300])
+            except Exception as e:
+                debug_log("ERROR", f"Retry {attempt + 1} falhou na chamada à API", str(e))
                 break
     return {"tipo": "analise", "resposta": "❌ Não foi possível gerar o plano. Tente reformular o pedido."}
 
@@ -441,16 +491,15 @@ def call_groq(messages: list, api_key: str) -> str:
 STATUS_OPTIONS    = ["⏳ Pendente", "🔄 Em andamento", "✅ Concluído", "❌ Cancelado"]
 PRIORIDADE_OPTIONS = ["Alta", "Média", "Baixa"]
 
-# Cores dos cabeçalhos 5W2H (fiel à imagem de referência)
 TH_COLORS = {
-    "what"   : ("#6B21A8", "#E9D5FF"),   # roxo
-    "why"    : ("#9D174D", "#FCE7F3"),   # rosa-magenta
-    "where"  : ("#BE123C", "#FFE4E6"),   # vermelho-rosa
-    "when"   : ("#C2410C", "#FFEDD5"),   # laranja
-    "who"    : ("#B45309", "#FEF3C7"),   # âmbar
-    "how"    : ("#065F46", "#D1FAE5"),   # verde
-    "howmuch": ("#0E7490", "#CFFAFE"),   # ciano
-    "status" : ("#374151", "#F9FAFB"),   # cinza
+    "what"   : ("#6B21A8", "#E9D5FF"),
+    "why"    : ("#9D174D", "#FCE7F3"),
+    "where"  : ("#BE123C", "#FFE4E6"),
+    "when"   : ("#C2410C", "#FFEDD5"),
+    "who"    : ("#B45309", "#FEF3C7"),
+    "how"    : ("#065F46", "#D1FAE5"),
+    "howmuch": ("#0E7490", "#CFFAFE"),
+    "status" : ("#374151", "#F9FAFB"),
 }
 
 STATUS_COLOR = {
@@ -498,7 +547,6 @@ def render_5w2h_html_table(plan: dict) -> str:
     acoes = plan.get("acoes", [])
     objetivo = plan.get("objetivo", "—")
 
-    # Larguras fixas por coluna (total ~1100px)
     W = {"what":"220px","why":"160px","where":"110px","when":"100px",
          "who":"130px","how":"130px","howmuch":"160px","status":"110px"}
 
@@ -520,10 +568,9 @@ def render_5w2h_html_table(plan: dict) -> str:
         bg = "#16192A" if i % 2 == 0 else "#1A1D2B"
         status = a.get("status", "⏳ Pendente")
         prio   = a.get("prioridade", "Alta")
-        # "Por quê" usa o objetivo geral pois o schema não tem campo why por ação
         porque = a.get("porque", objetivo)
-        onde   = a.get("onde", a.get("responsavel_area", "—"))  # fallback gracioso
-        como   = a.get("como", a.get("indicador_sucesso", "—"))  # fallback
+        onde   = a.get("onde", a.get("responsavel_area", "—"))
+        como   = a.get("como", a.get("indicador_sucesso", "—"))
 
         rows += f'<tr style="background:{bg};">'
         rows += _td(a.get("descricao","—"),         W["what"])
@@ -598,7 +645,6 @@ def render_5w2h_card(plan: dict, plan_key: str, editable: bool = True):
     """
     import streamlit.components.v1 as components
 
-    # ── Cabeçalho problema/objetivo ──
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
         <div style="width:36px;height:36px;background:linear-gradient(135deg,{COR_ACCENT},{COR_PURPLE});
@@ -623,12 +669,10 @@ def render_5w2h_card(plan: dict, plan_key: str, editable: bool = True):
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Tabela HTML estilizada ──
     table_html = render_5w2h_html_table(plan)
     n_acoes = len(plan.get("acoes", []))
     components.html(table_html, height=max(140, 55 + n_acoes * 72), scrolling=False)
 
-    # ── Modo edição via data_editor ──
     edit_toggle_key = f"edit_toggle_{plan_key}"
     if edit_toggle_key not in st.session_state:
         st.session_state[edit_toggle_key] = False
@@ -709,7 +753,6 @@ def render_plans_tab():
         ):
             plan_key = f"saved_plan_{idx}"
 
-            # Progress bar
             st.markdown(f"""
             <div style="margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;font-size:11px;color:{COR_MUTED};margin-bottom:4px;">
@@ -721,7 +764,6 @@ def render_plans_tab():
             </div>
             """, unsafe_allow_html=True)
 
-            # Render editable 5W2H table
             edited_df = render_5w2h_card(plan, plan_key, editable=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
@@ -739,7 +781,7 @@ def render_plans_tab():
 
 
 # ─────────────────────────────────────────────
-# SIDEBAR — filtros
+# SIDEBAR — filtros + debug
 # ─────────────────────────────────────────────
 with st.sidebar:
     st.markdown(f"""
@@ -791,9 +833,106 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
+    # ── PAINEL DE DEBUG ──────────────────────────────────────────────────────
+    st.markdown("---")
+
+    n_errors = sum(1 for e in st.session_state.debug_log if e["level"] == "ERROR")
+    n_warns  = sum(1 for e in st.session_state.debug_log if e["level"] == "WARN")
+    n_events = len(st.session_state.debug_log)
+
+    # Badge de status sempre visível mesmo com painel fechado
+    if n_errors:
+        badge_txt   = f"❌ {n_errors} erro(s)"
+        badge_color = COR_VERMELHO
+    elif n_warns:
+        badge_txt   = f"🟡 {n_warns} aviso(s)"
+        badge_color = COR_AMARELO
+    elif n_events:
+        badge_txt   = f"✅ {n_events} evento(s)"
+        badge_color = COR_VERDE
+    else:
+        badge_txt   = "sem eventos"
+        badge_color = COR_MUTED
+
+    debug_on = st.toggle(
+        f"🐛 Debug  —  {badge_txt}",
+        value=False,
+        key="debug_toggle",
+    )
+
+    if debug_on:
+        col_clr, col_exp = st.columns([1, 1])
+        with col_clr:
+            if st.button("🗑 Limpar log", use_container_width=True, key="clear_debug"):
+                st.session_state.debug_log = []
+                st.rerun()
+        with col_exp:
+            if st.button("📋 Copiar JSON", use_container_width=True, key="copy_debug"):
+                # Não há API nativa de clipboard no Streamlit; mostramos em text_area
+                st.session_state["debug_show_json"] = True
+
+        if st.session_state.get("debug_show_json"):
+            st.text_area(
+                "JSON do log",
+                value=json.dumps(st.session_state.debug_log, ensure_ascii=False, indent=2),
+                height=160,
+                key="debug_json_area",
+            )
+            if st.button("Fechar JSON", key="close_debug_json"):
+                st.session_state["debug_show_json"] = False
+                st.rerun()
+
+        log = st.session_state.debug_log
+        if not log:
+            st.markdown(
+                f'<div style="font-size:11px;color:{COR_MUTED};padding:8px 0;">'
+                f'Nenhum evento registrado ainda.<br>'
+                f'Envie uma mensagem para começar.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            # Exibe do mais recente para o mais antigo
+            for entry in reversed(log):
+                lvl_color = {
+                    "ERROR": COR_VERMELHO,
+                    "WARN" : COR_AMARELO,
+                    "OK"   : COR_VERDE,
+                    "INFO" : COR_ACCENT,
+                }.get(entry["level"], COR_MUTED)
+
+                detail_html = ""
+                if entry.get("detail"):
+                    escaped = (
+                        entry["detail"]
+                        .replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                    )
+                    detail_html = (
+                        f'<div class="debug-detail">{escaped}</div>'
+                    )
+
+                st.markdown(f"""
+                <div style="border-left:2px solid {lvl_color};padding:6px 8px;
+                     margin-bottom:6px;background:{COR_CARD};border-radius:0 6px 6px 0;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:11px;font-weight:600;color:{lvl_color};">
+                            {entry['icon']} {entry['level']}
+                        </span>
+                        <span style="font-size:10px;color:{COR_MUTED};font-family:'DM Mono',monospace;">
+                            {entry['ts']}
+                        </span>
+                    </div>
+                    <div style="font-size:11px;color:{COR_TEXTO};margin-top:2px;line-height:1.5;">
+                        {entry['msg']}
+                    </div>
+                    {detail_html}
+                </div>
+                """, unsafe_allow_html=True)
+
+
 # ─────────────────────────────────────────────
 # CONTEXTO — build_context do analytics.py
-# aproveita TODAS as análises do dashboard
 # ─────────────────────────────────────────────
 contexto_atual, stats = build_context(
     base,
@@ -872,7 +1011,6 @@ for msg_idx, msg in enumerate(st.session_state.chat_history):
         🤖 <strong style="color:{COR_PURPLE};">Agente HSE-IT</strong><br><br>
         </div>
         ''', unsafe_allow_html=True)
-        # Renderiza markdown nativamente para preservar formatação (tabelas, bullets, bold)
         st.markdown(texto)
 
     # ── Resposta de PLANO DE AÇÃO (tabela 5W2H) ──
@@ -906,7 +1044,7 @@ for msg_idx, msg in enumerate(st.session_state.chat_history):
     # ── Fallback: plano antigo sem campo 'tipo' (retrocompatibilidade) ──
     elif isinstance(content, dict) and "acoes" in content:
         plan_key = f"chat_plan_{msg_idx}"
-        content["tipo"] = "plano_acao"  # normaliza
+        content["tipo"] = "plano_acao"
         st.markdown(f"""
         <div style="border-left:3px solid {COR_PURPLE};padding-left:12px;margin:8px 0 4px 0;">
             <span style="font-size:13px;font-weight:600;color:{COR_PURPLE};">🤖 Agente HSE-IT</span>
@@ -948,8 +1086,16 @@ if typed_input and send_btn:
 if user_input and user_input.strip():
     st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
 
-    # Monta histórico para API (injeta contexto rico na primeira mensagem)
-    contexto_normativo = buscar_contexto_normativo(user_input.strip())
+    debug_log("INFO", f"Pergunta recebida", user_input.strip()[:200])
+
+    # RAG normativo
+    try:
+        contexto_normativo = buscar_contexto_normativo(user_input.strip())
+        debug_log("OK", "RAG normativo concluído",
+                  f"{len(contexto_normativo)} chars de contexto recuperado")
+    except Exception as e:
+        contexto_normativo = ""
+        debug_log("WARN", "RAG normativo falhou — prosseguindo sem contexto normativo", str(e))
 
     context_message = f"""CONTEXTO COMPLETO DO DASHBOARD HSE-IT:
 
@@ -962,18 +1108,17 @@ Use os dados do dashboard E as referências normativas acima para embasar análi
 Cite artigos e itens de normas quando relevante.
 Gere a resposta em JSON conforme o schema definido no system prompt."""
 
+    # Monta histórico para a API
     api_messages = []
     last_user_idx = max(i for i, m in enumerate(st.session_state.chat_history) if m["role"] == "user")
     for i, msg in enumerate(st.session_state.chat_history):
         if msg["role"] == "user" and i == last_user_idx:
-            # Sempre injeta o contexto atualizado na última pergunta do usuário
             api_messages.append({
                 "role": "user",
                 "content": f"{context_message}\n\nPergunta: {msg['content']}"
             })
         else:
             content = msg["content"]
-            # Groq exige string em content; serializa dicts (analise ou plano_acao)
             if isinstance(content, dict):
                 if content.get("tipo") == "analise":
                     content = content.get("resposta", "")
@@ -981,18 +1126,62 @@ Gere a resposta em JSON conforme o schema definido no system prompt."""
                     content = json.dumps(content, ensure_ascii=False)
             api_messages.append({"role": msg["role"], "content": content})
 
+    debug_log("INFO",
+              f"Chamando Groq API",
+              f"Modelo: llama-3.3-70b-versatile | Mensagens no histórico: {len(api_messages)}")
+
     with st.spinner("🧠 Analisando dados do dashboard..."):
         try:
             raw = call_groq(api_messages, GROQ_API_KEY)
+
+            debug_log("INFO",
+                      f"Resposta recebida — {len(raw)} chars",
+                      raw[:800] + ("\n\n[... truncado]" if len(raw) > 800 else ""))
+
             result = parse_agent_response(raw)
-            # Se foi pedido plano mas saiu incompleto, tenta corrigir
+
+            debug_log("INFO",
+                      f"Parse → tipo detectado: '{result.get('tipo', '?')}'",
+                      f"Chaves presentes: {list(result.keys())}")
+
+            # Retry se plano veio incompleto
             if result.get("tipo") == "plano_acao" and not result.get("acoes"):
+                debug_log("WARN", "Plano sem ações detectado — iniciando retry")
                 result = fix_plan_with_retry(raw, api_messages, GROQ_API_KEY)
+                debug_log(
+                    "OK" if result.get("acoes") else "ERROR",
+                    f"Após retry → tipo: '{result.get('tipo','?')}' | ações: {len(result.get('acoes',[]))}",
+                )
+
+            # Log do resultado final
+            if result.get("tipo") == "analise":
+                debug_log("OK",
+                          "Análise gerada com sucesso",
+                          f"Tamanho da resposta: {len(result.get('resposta',''))} chars")
+            elif result.get("tipo") == "plano_acao":
+                debug_log("OK",
+                          f"Plano gerado: {len(result.get('acoes', []))} ações",
+                          f"Problema: {result.get('problema','')[:120]}\n"
+                          f"Objetivo: {result.get('objetivo','')[:120]}")
+
             st.session_state.chat_history.append({"role": "assistant", "content": result})
             st.rerun()
+
         except Exception as e:
-            st.error(f"❌ Erro ao consultar o agente: {str(e)}")
+            tb = traceback.format_exc()
+            debug_log("ERROR", f"Exceção ao consultar o agente: {type(e).__name__}: {e}", tb)
             st.session_state.chat_history.pop()
+            # Não chama st.rerun() — mantém o erro visível na tela
+            st.error(f"❌ Erro ao consultar o agente: {str(e)}")
+            st.markdown(
+                f'<div style="background:{COR_CARD};border:1px solid {COR_VERMELHO}44;'
+                f'border-radius:8px;padding:12px 16px;margin-top:8px;">'
+                f'<div style="font-size:11px;color:{COR_MUTED};font-weight:600;margin-bottom:6px;">'
+                f'TRACEBACK (ative o painel 🐛 Debug na sidebar para histórico completo)</div>'
+                f'<pre style="font-size:10px;color:{COR_VERMELHO};white-space:pre-wrap;'
+                f'word-break:break-all;margin:0;">{tb}</pre></div>',
+                unsafe_allow_html=True,
+            )
 
 # ─────────────────────────────────────────────
 # RESUMO AUTOMÁTICO (quando não há chat ainda)
@@ -1036,7 +1225,6 @@ if not st.session_state.chat_history and stats:
             </div>
             """, unsafe_allow_html=True)
 
-    # Top setores críticos (usando dados ricos do analytics.py)
     top_s = stats.get("top_setores", [])
     if top_s:
         st.markdown(f'<div class="section-title">🔥 Setores mais críticos</div>', unsafe_allow_html=True)
