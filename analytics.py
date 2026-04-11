@@ -24,22 +24,22 @@ import numpy as np
 
 DIMENSOES = [
     "Demandas", "Controle", "Apoio_Chefia",
-    "Apoio_Colegas", "Relacionamentos", "Cargo", "Comunicacao_Mudancas"
+    "Apoio_Colegas", "Relacionamentos", "Cargo", "Mudanca"
 ]
 
 DIMENSOES_LABEL = {
-    "Demandas":             "Demandas",
-    "Controle":             "Controle",
-    "Apoio_Chefia":         "Apoio da Chefia",
-    "Apoio_Colegas":        "Apoio dos Colegas",
-    "Relacionamentos":      "Relacionamentos",
-    "Cargo":                "Cargo / Função",
-    "Comunicacao_Mudancas": "Comunicação e Mudanças",
+    "Demandas":        "Demandas",
+    "Controle":        "Controle",
+    "Apoio_Chefia":    "Apoio da Chefia",
+    "Apoio_Colegas":   "Apoio dos Colegas",
+    "Relacionamentos": "Relacionamentos",
+    "Cargo":           "Cargo / Função",
+    "Mudanca":         "Comunicação e Mudanças",
 }
 
-# Alias usado no agente_ia.py original (mantido por compatibilidade)
+# Alias mantido apenas para retrocompatibilidade com código legado
 DIMENSOES_ALIAS = {
-    "Mudanca": "Comunicacao_Mudancas",
+    "Comunicacao_Mudancas": "Mudanca",
 }
 
 DIM_NEGATIVAS = {"Demandas", "Relacionamentos"}
