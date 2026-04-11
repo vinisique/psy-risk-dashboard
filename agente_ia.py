@@ -1222,10 +1222,10 @@ with tabs[4]:
         """
         problemas = []
 
-        # 1. Setores críticos
+        # 1. Setores — MODO TESTE: inclui todos os níveis (NR >= 1)
         for _, row in setor_f.iterrows():
             nr = float(row.get("NR_geral", 0))
-            if nr < 9: continue  # só Importante e Crítico
+            if nr < 1: continue
             classe = classificar_NR(nr)
             n_col  = int(row.get("n_colaboradores", 0))
             perc_a = float(row.get("perc_risco_alto", 0)) * 100
@@ -1262,7 +1262,7 @@ with tabs[4]:
             if col_s not in base_f.columns: continue
             score_v = base_f[col_s].mean()
             classe  = score_para_classificacao(score_v, d)
-            if classe not in ["Alto Risco", "Risco Moderado"]: continue
+            if classe not in ["Alto Risco", "Risco Moderado", "Risco Médio", "Baixo Risco"]: continue
             perc_alto_d = (base_f[f"class_{d}"] == "Alto Risco").mean() * 100 if f"class_{d}" in base_f.columns else 0
 
             problemas.append({
@@ -1282,10 +1282,10 @@ with tabs[4]:
                 "plan":      None,
             })
 
-        # 3. Cargos críticos
+        # 3. Cargos — MODO TESTE: inclui todos os níveis (NR >= 1)
         for _, row in cargo_f.iterrows():
             nr = float(row.get("NR_geral", 0))
-            if nr < 9: continue
+            if nr < 1: continue
             classe = classificar_NR(nr)
             n_col  = int(row.get("n_colaboradores", 0))
             perc_a = float(row.get("perc_risco_alto", 0)) * 100
@@ -1306,8 +1306,8 @@ with tabs[4]:
                 "plan":      None,
             })
 
-        # Ordena por NR decrescente, limita a 20
-        return sorted(problemas, key=lambda x: -x["nr"])[:20]
+        # Ordena por NR decrescente — MODO TESTE: limite 50
+        return sorted(problemas, key=lambda x: -x["nr"])[:50]
 
     if st.session_state.problems_cache is None:
         st.session_state.problems_cache = gerar_lista_problemas()
@@ -1328,8 +1328,8 @@ with tabs[4]:
         with col_f2:
             filtro_classe = st.multiselect(
                 "Filtrar por classificação",
-                ["Crítico","Importante","Alto Risco","Risco Moderado"],
-                default=["Crítico","Importante","Alto Risco","Risco Moderado"],
+                ["Crítico","Importante","Moderado","Aceitável","Alto Risco","Risco Moderado","Risco Médio","Baixo Risco"],
+                default=["Crítico","Importante","Moderado","Aceitável","Alto Risco","Risco Moderado","Risco Médio","Baixo Risco"],
                 key="prob_classe_filter"
             )
 
