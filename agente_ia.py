@@ -1218,21 +1218,24 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Botão de atalho via query param / session state
+# ─────────────────────────────────────────────
+# BOTÃO DE ATALHO — usa query_params para
+# garantir navegação correta até a Tab 10
+# ─────────────────────────────────────────────
 if st.button("🚨 Abrir Problemas & Planos", key="atalho_prob_planos",
              type="primary", use_container_width=False):
-    st.session_state["_ir_para_tab_planos"] = True
+    st.query_params["tab"] = "planos"
+    st.rerun()
 
 # ─────────────────────────────────────────────
-# TABS — 9 originais + 1 nova (Problemas & Planos)
+# TABS — lê query_param para definir aba inicial
 # ─────────────────────────────────────────────
-_ir_para_planos = st.session_state.get("_ir_para_tab_planos", False)
-if _ir_para_planos:
-    st.session_state["_ir_para_tab_planos"] = False
-_tab_inicial = "🚨 Problemas & Planos" if _ir_para_planos else "📊 Visão Geral"
+_tab_param   = st.query_params.get("tab", "")
+_tab_inicial = "🚨 Problemas & Planos" if _tab_param == "planos" else "📊 Visão Geral"
 
-# ── DEBUG TEMPORÁRIO — remover após confirmar funcionamento ──────────────
-st.caption(f"🐛 DEBUG | flag={_ir_para_planos} | tab_inicial='{_tab_inicial}' | session={st.session_state.get('_ir_para_tab_planos', 'ausente')}")
+# Limpa o param logo após a leitura para não travar na aba em reloads futuros
+if _tab_param == "planos":
+    st.query_params.clear()
 
 tabs = st.tabs([
     "📊 Visão Geral",
