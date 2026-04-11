@@ -412,7 +412,7 @@ Responda SEMPRE com JSON válido:
       "descricao":"O quê?","porque":"Por quê?","onde":"Onde?",
       "responsavel":"Quem?","prazo":"Quando?","como":"Como?",
       "prioridade":"Alta | Média | Baixa",
-      "custo_estimado":"Quanto custará? (Orçamento financeiro, horas de trabalho ou recursos materiais)",
+      "indicador_sucesso":"Quanto custará a implementação? (Custo em R$, horas de execução ou materiais)",
       "status":"⏳ Pendente"
     }
   ]
