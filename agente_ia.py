@@ -469,6 +469,11 @@ def _nr_atual_do_grupo(prob_id, tipo, grupo):
     """
     Busca o NR atual do grupo nos DataFrames já filtrados em memória.
     Retorna None se não encontrado.
+
+    Para Setor/Cargo: lê NR_geral diretamente do DataFrame agregado filtrado.
+    Para Dimensão: usa a média de NR_{d} do base_f filtrado — assim a
+    Severidade ponderada calculada no notebook é preservada, evitando o
+    erro anterior de fixar S=4 (pior caso) para todos os casos.
     """
     try:
         if tipo == "Setor":
@@ -482,10 +487,22 @@ def _nr_atual_do_grupo(prob_id, tipo, grupo):
         elif tipo == "Dimensão":
             for d in DIMENSOES:
                 if DIMENSOES_LABEL[d] == grupo:
-                    col_s = f"score_{d}"
-                    if col_s in base_f.columns:
-                        score_v = base_f[col_s].mean()
-                        return float(score_para_P(score_v, d) * 4.0)
+                    # Usa NR_{d} pré-calculado no notebook (P × S_ponderada real).
+                    # Fallback para P × S_media caso a coluna não exista no parquet.
+                    col_nr = f"NR_{d}"
+                    if col_nr in base_f.columns:
+                        return float(base_f[col_nr].mean())
+                    # Fallback: P × S_media (melhor que P × 4 fixo)
+                    col_s_pond = f"S_{d}"
+                    col_score  = f"score_{d}"
+                    if col_score in base_f.columns:
+                        score_v = base_f[col_score].mean()
+                        p_v     = score_para_P(score_v, d)
+                        if col_s_pond in base_f.columns:
+                            s_v = round(base_f[col_s_pond].mean())
+                        else:
+                            s_v = p_v  # último recurso: S = P (conservador, nunca 4 fixo)
+                        return float(p_v * s_v)
     except Exception:
         pass
     return None
@@ -1104,16 +1121,24 @@ def gerar_lista_problemas():
 
     # Dimensões
     for d in DIMENSOES:
-        col_s = f"score_{d}"
+        col_s  = f"score_{d}"
+        col_nr = f"NR_{d}"
         if col_s not in base_f.columns: continue
         score_v  = base_f[col_s].mean()
-        classe   = score_para_classificacao(score_v, d)
         perc_alt = (base_f[f"class_{d}"] == "Alto Risco").mean() * 100 if f"class_{d}" in base_f.columns else 0
+        # Usa NR_{d} pre-calculado no notebook (P x S_ponderada real).
+        # Antes usava score_para_P(score_v, d) * 4.0 — S fixa em 4, sempre pior caso.
+        nr_v  = float(base_f[col_nr].mean()) if col_nr in base_f.columns else float(score_para_P(score_v, d) * 4.0)
+        # Usa classificar_NR para manter vocabulario unico (Aceitavel/Moderado/Importante/Critico)
+        # igual a Setor e Cargo — antes usava score_para_classificacao que retorna vocabulario diferente
+        # (Baixo Risco/Risco Médio/etc.), quebrando o filtro de classe na Tab 10.
+        classe = classificar_NR(nr_v)
         problemas.append({
             "id": f"dim_{d}", "tipo": "Dimensão", "grupo": DIMENSOES_LABEL[d],
-            "nr": score_para_P(score_v, d) * 4.0, "classe": classe, "n": n_total, "perc_alto": perc_alt,
+            "nr": nr_v, "classe": classe, "n": n_total, "perc_alto": perc_alt,
             "worst_dim": DIMENSOES_LABEL[d], "worst_nr": score_v,
-            "descricao": (f"Dimensão '{DIMENSOES_LABEL[d]}' com score={score_v:.2f} ({classe}) — "
+            "descricao": (f"Dimensão '{DIMENSOES_LABEL[d]}' com score={score_v:.2f}, "
+                          f"NR={nr_v:.1f} ({classe}) — "
                           f"{perc_alt:.0f}% dos respondentes em Alto Risco nessa dimensão."),
             "plan": None,
         })
