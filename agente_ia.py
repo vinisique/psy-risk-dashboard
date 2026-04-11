@@ -412,7 +412,7 @@ Responda SEMPRE com JSON válido:
       "descricao":"O quê?","porque":"Por quê?","onde":"Onde?",
       "responsavel":"Quem?","prazo":"Quando?","como":"Como?",
       "prioridade":"Alta | Média | Baixa",
-      "indicador_sucesso":"Quanto custará a implementação? (Custo em R$, horas de execução ou materiais)",
+      "custo_investimento":"Quanto custará a implementação? (Custo em R$, horas de execução ou materiais)",
       "status":"⏳ Pendente"
     }
   ]
@@ -526,7 +526,7 @@ Responda SEMPRE com JSON válido:
       "descricao":"O que?","porque":"Por que?","onde":"Onde?",
       "responsavel":"Quem?","prazo":"Quando?","como":"Como?",
       "prioridade":"Alta | Media | Baixa",
-      "indicador_sucesso":"Quanto? (metrica mensuravel)",
+      "custo_investimento":"Quanto custará a implementação? (Custo em R$, horas de execução ou materiais)",
       "status":"Pendente"
     }
   ]
@@ -880,7 +880,7 @@ def render_5w2h_html(plan):
         rows += _td(a.get("prazo","—"), W["when"], True)
         rows += _td(a.get("responsavel","—"), W["who"])
         rows += _td(a.get("como","—"), W["how"])
-        rows += _td(a.get("indicador_sucesso","—"), W["howmuch"])
+        rows += _td(a.get("custo_investimento","—"), W["howmuch"])
         rows += _td(_badge(a.get("status","⏳ Pendente"),STATUS_COLOR)+"<br>"
                     +_badge(a.get("prioridade","Alta"),PRIO_COLOR), W["status"], True)
         rows += "</tr>"
@@ -904,7 +904,7 @@ def plan_to_df(plan):
             "Quando?"   : a.get("prazo",""),
             "Quem?"     : a.get("responsavel",""),
             "Como?"     : a.get("como",""),
-            "Quanto?"   : a.get("indicador_sucesso",""),
+            "Quanto?"   : a.get("custo_investimento",""),
             "Status"    : a.get("status","⏳ Pendente"),
             "Prioridade": a.get("prioridade","Alta"),
         })
@@ -916,7 +916,7 @@ def df_to_acoes(df):
     return [{"descricao":r.get("O quê?",""),"porque":r.get("Por quê?",""),
              "onde":r.get("Onde?",""),"prazo":r.get("Quando?",""),
              "responsavel":r.get("Quem?",""),"como":r.get("Como?",""),
-             "indicador_sucesso":r.get("Quanto?",""),
+             "custo_investimento":r.get("Quanto?",""),
              "status":r.get("Status","⏳ Pendente"),
              "prioridade":r.get("Prioridade","Alta")}
             for _, r in df.iterrows()]
