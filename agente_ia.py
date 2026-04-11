@@ -1110,8 +1110,56 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────
+# CARD DE ACESSO RÁPIDO — Problemas & Planos
+# ─────────────────────────────────────────────
+
+# ── Calcula métricas para o card ─────────────────────────────────────────────
+_saved_ids = {p["metadata"]["problem_id"] for p in st.session_state.action_plans if "metadata" in p}
+_mtime_atual = _parquet_mtime()
+
+_n_sem_plano = sum(1 for p in (st.session_state.problems_cache or [])
+                   if p["id"] not in _saved_ids)
+
+def _metric_pill(valor, label, cor_valor, cor_bg, cor_borda):
+    return (
+        f'<div style="background:{cor_bg};border:1px solid {cor_borda};border-radius:10px;'
+        f'padding:12px 18px;text-align:center;min-width:110px;">' 
+        f'<div style="font-size:26px;font-weight:700;color:{cor_valor};line-height:1;">{valor}</div>'
+        f'<div style="font-size:11px;color:{COR_MUTED};margin-top:4px;line-height:1.3;">{label}</div>'
+        f'</div>'
+    )
+
+_pills = _metric_pill(_n_sem_plano, "problemas<br>sem plano", COR_LARANJA, "rgba(232,98,26,0.08)", "rgba(232,98,26,0.3)")
+
+st.markdown(f"""
+<div style="background:{COR_CARD};border:1px solid {COR_BORDA};border-radius:14px;
+     padding:18px 24px;margin-bottom:1.5rem;
+     display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+  <div style="display:flex;flex-direction:column;gap:4px;">
+    <div style="font-size:13px;font-weight:700;color:{COR_TEXTO};letter-spacing:.01em;">
+      🚨 Problemas & Planos de Ação
+    </div>
+    <div style="font-size:12px;color:{COR_MUTED};">
+      Acompanhe riscos identificados e o ciclo PDCA dos planos gerados
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    {_pills}
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Botão de atalho via query param / session state
+if st.button("🚨 Abrir Problemas & Planos", key="atalho_prob_planos",
+             type="primary", use_container_width=False):
+    st.session_state["_ir_para_tab_planos"] = True
+    st.rerun()
+
+# ─────────────────────────────────────────────
 # TABS — 9 originais + 1 nova (Problemas & Planos)
 # ─────────────────────────────────────────────
+_tab_inicial = 9 if st.session_state.pop("_ir_para_tab_planos", False) else 0
+
 tabs = st.tabs([
     "📊 Visão Geral",
     "📐 Por Dimensão",
@@ -1123,7 +1171,7 @@ tabs = st.tabs([
     "👔 Por Cargo",
     "📋 PGR",
     "🚨 Problemas & Planos",
-])
+], default=_tab_inicial)
 
 # ══════════════════════════════════════════════
 # TAB 1 — VISÃO GERAL (Slides 13, 14, 15)
