@@ -1228,8 +1228,11 @@ if st.button("🚨 Abrir Problemas & Planos", key="atalho_prob_planos",
 # ─────────────────────────────────────────────
 _ir_para_planos = st.session_state.get("_ir_para_tab_planos", False)
 if _ir_para_planos:
-    st.session_state["_ir_para_tab_planos"] = False   # limpa após ler
+    st.session_state["_ir_para_tab_planos"] = False
 _tab_inicial = "🚨 Problemas & Planos" if _ir_para_planos else "📊 Visão Geral"
+
+# ── DEBUG TEMPORÁRIO — remover após confirmar funcionamento ──────────────
+st.caption(f"🐛 DEBUG | flag={_ir_para_planos} | tab_inicial='{_tab_inicial}' | session={st.session_state.get('_ir_para_tab_planos', 'ausente')}")
 
 tabs = st.tabs([
     "📊 Visão Geral",
