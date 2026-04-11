@@ -996,13 +996,14 @@ with st.sidebar:
 
     st.markdown("### 👥 Total de Colaboradores")
     st.caption("Informe o total cadastrado para calcular o índice de engajamento.")
+    _min_colab = len(base)  # mínimo = total de respondentes na base (sem filtros)
     total_colaboradores = st.number_input(
         "Total de colaboradores da empresa",
-        min_value=1,
-        value=st.session_state.get("total_colab", 1),
+        min_value=_min_colab,
+        value=max(st.session_state.get("total_colab", _min_colab), _min_colab),
         step=1,
         key="total_colab",
-        help="Número total de funcionários cadastrados (100% base). Usado no indicador de engajamento.",
+        help=f"Mínimo: {_min_colab} (respondentes já registrados). Aumente para refletir colaboradores que ainda não responderam.",
     )
 
     st.markdown("---")
