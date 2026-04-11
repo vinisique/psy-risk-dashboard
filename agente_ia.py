@@ -634,10 +634,12 @@ def render_5w2h_html(plan: dict) -> str:
 
     return f"""
     <style>
-      .w2h-s{{overflow-x:auto;border-radius:10px;border:1px solid #2A2D3E;}}
-      .w2h-t{{border-collapse:collapse;table-layout:fixed;width:100%;}}
-      .w2h-t tr:last-child td{{border-bottom:none;}}
-      .w2h-t td:last-child,.w2h-t th:last-child{{border-right:none!important;}}
+      * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+      body {{ background: transparent; overflow-y: auto; }}
+      .w2h-s {{ overflow-x: auto; border-radius: 10px; border: 1px solid #2A2D3E; }}
+      .w2h-t {{ border-collapse: collapse; table-layout: fixed; width: 100%; }}
+      .w2h-t tr:last-child td {{ border-bottom: none; }}
+      .w2h-t td:last-child, .w2h-t th:last-child {{ border-right: none !important; }}
     </style>
     <div class="w2h-s"><table class="w2h-t">{thead}<tbody>{rows}</tbody></table></div>
     """
@@ -700,7 +702,9 @@ def render_plan_card(plan: dict, plan_key: str, editable: bool = True):
     """, unsafe_allow_html=True)
 
     n_acoes = len(plan.get("acoes",[]))
-    components.html(render_5w2h_html(plan), height=max(140, 55 + n_acoes * 72), scrolling=False)
+    # 120px de cabeçalho fixo + 110px por linha (folga para texto que quebra em múltiplas linhas).
+    # scrolling=True garante que, mesmo que o cálculo seja conservador, nada some.
+    components.html(render_5w2h_html(plan), height=max(200, 120 + n_acoes * 110), scrolling=True)
 
     toggle_key = f"edit_toggle_{plan_key}"
     if toggle_key not in st.session_state:
