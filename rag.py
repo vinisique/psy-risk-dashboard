@@ -11,6 +11,13 @@ Secrets necessários no Streamlit Cloud:
     PG_DB       = "hse_normas"
     PG_USER     = "..."
     PG_PASSWORD = "..."
+
+ARQUITETURA DE CONEXÃO:
+    - O modelo de embedding (~560 MB) é cacheado via @st.cache_resource
+      e carregado apenas uma vez por sessão do servidor.
+    - A conexão psycopg2 NÃO é cacheada: é aberta a cada chamada e
+      fechada no bloco finally. Isso evita o erro "connection already
+      closed" causado pelo timeout de conexões ociosas no PostgreSQL.
 """
 
 import streamlit as st
@@ -21,12 +28,10 @@ from sentence_transformers import SentenceTransformer
 # ─────────────────────────────────────────────
 # CONSTANTES
 # ─────────────────────────────────────────────
-# Mesmo modelo usado no indexador — dimensão 1024
 EMBEDDING_MODEL     = "intfloat/multilingual-e5-large"
-RELEVANCE_THRESHOLD = 0.50   # score mínimo de cosine similarity
-DEFAULT_TOP_K       = 5      # quantos trechos recuperar por query
+RELEVANCE_THRESHOLD = 0.50
+DEFAULT_TOP_K       = 5
 
-# Labels amigáveis para exibição
 DOC_LABELS = {
     "ISO_45003_Preview"      : "ISO 45003:2021 (Preview WMS)",
     "WHO_ILO_2022"           : "WHO/ILO — Mental Health at Work (2022)",
@@ -42,25 +47,35 @@ DOC_LABELS = {
 
 
 # ─────────────────────────────────────────────
-# INICIALIZAÇÃO COM CACHE
-# O modelo (~560MB) e a conexão ao banco são carregados
-# uma única vez e reutilizados em todas as requisições.
+# CACHE APENAS DO MODELO — pesado (~560 MB)
+# A conexão ao banco é intencionalamente excluída
+# do cache para evitar conexões ociosas/fechadas.
 # ─────────────────────────────────────────────
-@st.cache_resource(show_spinner="📚 Carregando base normativa...")
-def _get_resources():
-    """Retorna (model, conn) com cache de sessão."""
-    model = SentenceTransformer(EMBEDDING_MODEL)
+@st.cache_resource(show_spinner="📚 Carregando modelo de embeddings...")
+def _get_model() -> SentenceTransformer:
+    return SentenceTransformer(EMBEDDING_MODEL)
 
+
+def _get_conn() -> psycopg2.extensions.connection:
+    """
+    Abre e retorna uma conexão nova ao PostgreSQL.
+    Deve ser fechada pelo chamador (use try/finally).
+    Nunca é cacheada — conexões ociosas são fechadas
+    pelo servidor após o idle_timeout configurado.
+    """
     conn = psycopg2.connect(
         host=st.secrets["PG_HOST"],
         port=int(st.secrets.get("PG_PORT", 5432)),
         dbname=st.secrets["PG_DB"],
         user=st.secrets["PG_USER"],
         password=st.secrets["PG_PASSWORD"],
+        # Fecha a conexão automaticamente se ficar ociosa por 10s
+        # antes de o servidor encerrar — evita erros na próxima query.
+        options="-c statement_timeout=30000",
+        connect_timeout=10,
     )
     register_vector(conn)
-
-    return model, conn
+    return conn
 
 
 # ─────────────────────────────────────────────
@@ -74,31 +89,29 @@ def buscar_contexto_normativo(
     """
     Recebe a pergunta do usuário e retorna uma string formatada
     com os trechos normativos mais relevantes, pronta para injetar
-    no system/context prompt da Groq.
+    no context prompt da Groq.
 
-    Retorna string vazia se nenhum trecho atingir o threshold.
-
-    Nota: o prefixo "query: " é obrigatório para o modelo e5 —
-    ele sinaliza que o texto é uma consulta (vs. "passage: " nos docs indexados),
-    o que melhora significativamente a qualidade semântica da busca.
+    Retorna string vazia se nenhum trecho atingir o threshold
+    ou se o banco estiver indisponível.
     """
     if not pergunta or not pergunta.strip():
         return ""
 
+    # Embedding da query (modelo cacheado, nunca recriado)
     try:
-        model, conn = _get_resources()
+        model = _get_model()
+        query_vector = model.encode(
+            f"query: {pergunta}",
+            normalize_embeddings=True,
+        ).tolist()
     except Exception as e:
-        st.warning(f"⚠️ RAG indisponível: {e}")
+        st.warning(f"⚠️ Erro ao gerar embedding: {e}")
         return ""
 
-    # Gera embedding da pergunta com prefixo obrigatório do modelo e5
-    query_vector = model.encode(
-        f"query: {pergunta}",
-        normalize_embeddings=True,
-    ).tolist()
-
-    # Busca no pgvector por similaridade de cosseno
+    # Conexão aberta aqui, fechada no finally — nunca vaza
+    conn = None
     try:
+        conn = _get_conn()
         cur = conn.cursor()
         cur.execute("""
             SELECT
@@ -112,9 +125,18 @@ def buscar_contexto_normativo(
 
         rows = cur.fetchall()
         cur.close()
+
     except Exception as e:
         st.warning(f"⚠️ Erro na busca normativa: {e}")
         return ""
+
+    finally:
+        # Garante fechamento mesmo se a query lançar exceção
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass  # já estava fechada — ignorar
 
     if not rows:
         return ""
@@ -133,7 +155,6 @@ def buscar_contexto_normativo(
 
         label = DOC_LABELS.get(doc_id, doc_id)
         docs_usados.add(label)
-
         trechos.append(
             f"[Fonte: {label} | Relevância: {score:.0%}]\n{texto}"
         )
@@ -141,9 +162,8 @@ def buscar_contexto_normativo(
     if not trechos:
         return ""
 
-    # Monta bloco formatado para injetar no prompt
     fontes_str = " · ".join(sorted(docs_usados))
-    bloco = (
+    return (
         "════════════════════════════════════════════\n"
         "BASE NORMATIVA RELEVANTE PARA ESTA RESPOSTA\n"
         f"Fontes: {fontes_str}\n"
@@ -152,20 +172,18 @@ def buscar_contexto_normativo(
         + "\n\n════════════════════════════════════════════"
     )
 
-    return bloco
-
 
 # ─────────────────────────────────────────────
 # UTILITÁRIO — lista documentos indexados
-# Útil para debug / painel administrativo
 # ─────────────────────────────────────────────
 def listar_documentos_indexados() -> dict:
     """
     Retorna estatísticas do banco pgvector.
-    Use no Streamlit para mostrar o status da base normativa.
+    Abre e fecha a própria conexão — seguro para chamar a qualquer momento.
     """
+    conn = None
     try:
-        _, conn = _get_resources()
+        conn = _get_conn()
         cur = conn.cursor()
 
         cur.execute("SELECT COUNT(*) FROM documentos_chunks;")
@@ -187,3 +205,9 @@ def listar_documentos_indexados() -> dict:
         }
     except Exception as e:
         return {"status": "offline", "erro": str(e)}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
