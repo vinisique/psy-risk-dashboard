@@ -1227,7 +1227,7 @@ if st.button("🚨 Abrir Problemas & Planos", key="atalho_prob_planos",
 # ─────────────────────────────────────────────
 # TABS — 9 originais + 1 nova (Problemas & Planos)
 # ─────────────────────────────────────────────
-_tab_inicial = 9 if st.session_state.pop("_ir_para_tab_planos", False) else 0
+_tab_inicial = "🚨 Problemas & Planos" if st.session_state.pop("_ir_para_tab_planos", False) else "📊 Visão Geral"
 
 tabs = st.tabs([
     "📊 Visão Geral",
