@@ -108,6 +108,7 @@ _ss_defaults = {
     "open_analysis":  {},
     "problems_cache": None,
     "problems_hash":  "",
+    "parquet_mtime":  0.0,   # última data de modificação conhecida dos parquets
 }
 for _k, _v in _ss_defaults.items():
     if _k not in st.session_state:
@@ -448,6 +449,281 @@ def parse_json_response(raw):
         return json.loads(m.group(0)) if m else {"tipo": "analise", "resumo": raw}
     except Exception:
         return {"tipo": "analise", "resumo": raw}
+
+
+# ─── PDCA — detecção de atualização dos parquets ─────────────────────────────
+
+def _parquet_mtime():
+    """Retorna o maior mtime (float) entre os arquivos parquet conhecidos."""
+    paths = [BASE_PATH, SETOR_PATH, CARGO_PATH, UNIDADE_PATH]
+    mtime = 0.0
+    for p in paths:
+        try:
+            mtime = max(mtime, os.path.getmtime(p))
+        except OSError:
+            pass
+    return mtime
+
+
+def _nr_atual_do_grupo(prob_id, tipo, grupo):
+    """
+    Busca o NR atual do grupo nos DataFrames já filtrados em memória.
+    Retorna None se não encontrado.
+    """
+    try:
+        if tipo == "Setor":
+            row = setor_f[setor_f["Setor"] == grupo]
+            if not row.empty:
+                return float(row.iloc[0]["NR_geral"])
+        elif tipo == "Cargo":
+            row = cargo_f[cargo_f["Cargo"] == grupo]
+            if not row.empty:
+                return float(row.iloc[0]["NR_geral"])
+        elif tipo == "Dimensão":
+            for d in DIMENSOES:
+                if DIMENSOES_LABEL[d] == grupo:
+                    col_s = f"score_{d}"
+                    if col_s in base_f.columns:
+                        score_v = base_f[col_s].mean()
+                        return float(score_para_P(score_v, d) * 4.0)
+    except Exception:
+        pass
+    return None
+
+
+def _perc_alto_atual_do_grupo(tipo, grupo):
+    """Retorna % em risco alto atual do grupo (0–100). None se não encontrado."""
+    try:
+        if tipo == "Setor":
+            row = setor_f[setor_f["Setor"] == grupo]
+            if not row.empty:
+                return float(row.iloc[0].get("perc_risco_alto", 0)) * 100
+        elif tipo == "Cargo":
+            row = cargo_f[cargo_f["Cargo"] == grupo]
+            if not row.empty:
+                return float(row.iloc[0].get("perc_risco_alto", 0)) * 100
+        elif tipo == "Dimensão":
+            for d in DIMENSOES:
+                if DIMENSOES_LABEL[d] == grupo:
+                    if f"class_{d}" in base_f.columns:
+                        return (base_f[f"class_{d}"] == "Alto Risco").mean() * 100
+    except Exception:
+        pass
+    return None
+
+
+SYSTEM_ADJUST = """Você é o Agente HSE-IT — especialista em saúde mental ocupacional, riscos psicossociais, NR-1 e ISO 45003.
+Recebe um plano 5W2H existente, o resultado do Check PDCA (comparativo de NR antes/depois) e gera um plano 5W2H AJUSTADO — complementar ao anterior, focado nas lacunas que persistem.
+NAO repita ações já concluídas. Foque no que ainda precisa melhorar.
+
+Responda SEMPRE com JSON válido:
+{
+  "tipo": "plano_acao",
+  "problema": "descricao curta do problema residual",
+  "objetivo": "objetivo SMART ajustado",
+  "acoes": [
+    {
+      "descricao":"O que?","porque":"Por que?","onde":"Onde?",
+      "responsavel":"Quem?","prazo":"Quando?","como":"Como?",
+      "prioridade":"Alta | Media | Baixa",
+      "indicador_sucesso":"Quanto? (metrica mensuravel)",
+      "status":"Pendente"
+    }
+  ]
+}
+Gere entre 3 e 5 ações específicas e acionáveis."""
+
+
+def _render_pdca_card(saved, prob_id, saved_idx):
+    """
+    Renderiza o card PDCA abaixo do plano 5W2H.
+    saved     — dict do plano em session_state.action_plans
+    prob_id   — id do problema
+    saved_idx — índice em session_state.action_plans
+    """
+    plan     = saved["plan"]
+    meta     = saved.get("metadata", {})
+    tipo     = meta.get("tipo", "")
+    grupo    = meta.get("grupo", "")
+    created  = saved.get("created_at", "—")
+
+    nr_base     = saved.get("nr_baseline", None)
+    perc_base   = saved.get("perc_alto_baseline", None)
+    mtime_base  = saved.get("parquet_mtime_baseline", 0.0)
+    mtime_atual = _parquet_mtime()
+    dados_novos = (mtime_atual > mtime_base) and (mtime_base > 0)
+
+    nr_atual   = _nr_atual_do_grupo(prob_id, tipo, grupo) if dados_novos else None
+    perc_atual = _perc_alto_atual_do_grupo(tipo, grupo)   if dados_novos else None
+
+    progress = compute_progress(plan)
+    prog_pct = int(progress * 100)
+    acoes    = plan.get("acoes", [])
+    n_acoes  = len(acoes)
+    n_done   = int(progress * n_acoes)
+
+    def _dot(done):
+        cor = COR_VERDE if done else COR_CINZA
+        return (f'<span style="display:inline-block;width:7px;height:7px;border-radius:50%;'
+                f'background:{cor};margin-right:6px;vertical-align:middle;"></span>')
+
+    def _quadrant(letra, titulo, conteudo_html, ativo=False, concluido=False):
+        borda_cor = COR_ACCENT if ativo else (COR_VERDE if concluido else COR_BORDA)
+        borda_w   = "2px" if (ativo or concluido) else "1px"
+        return (f'<div style="background:#16192A;border:{borda_w} solid {borda_cor};'
+                f'border-radius:10px;padding:14px 16px;min-height:130px;">'
+                f'<div style="font-size:10px;font-weight:700;color:{COR_MUTED};'
+                f'text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px;">{letra}</div>'
+                f'<div style="font-size:13px;font-weight:600;color:{COR_TEXTO};margin-bottom:10px;">{titulo}</div>'
+                f'{conteudo_html}</div>')
+
+    # ── P — Plan ─────────────────────────────────────────────────────────────
+    nr_b_fmt = f"{nr_base:.1f}" if nr_base is not None else "—"
+    p_html = (
+        f'{_dot(True)}<span style="font-size:12px;color:{COR_MUTED};">Problema identificado</span><br>'
+        f'{_dot(True)}<span style="font-size:12px;color:{COR_MUTED};">5W2H gerado em {created}</span><br>'
+        f'{_dot(nr_base is not None)}<span style="font-size:12px;color:{COR_MUTED};">NR baseline: {nr_b_fmt}</span>'
+    )
+
+    # ── D — Do ───────────────────────────────────────────────────────────────
+    acoes_html = ""
+    for a in acoes[:5]:
+        done = a.get("status", "") == "✅ Concluído"
+        acoes_html += (f'{_dot(done)}<span style="font-size:12px;color:{COR_MUTED};">'
+                       f'{a.get("descricao","—")[:55]}</span><br>')
+    d_html = (
+        acoes_html
+        + f'<div style="margin-top:8px;background:{COR_BORDA};border-radius:3px;height:5px;">'
+        f'<div style="width:{prog_pct}%;height:5px;border-radius:3px;'
+        f'background:linear-gradient(90deg,{COR_ACCENT},{COR_PURPLE});"></div></div>'
+        f'<div style="font-size:11px;color:{COR_MUTED};margin-top:4px;">{n_done}/{n_acoes} ações concluídas</div>'
+    )
+
+    # ── C — Check ────────────────────────────────────────────────────────────
+    if dados_novos and nr_atual is not None and nr_base is not None:
+        delta   = nr_base - nr_atual
+        delta_p = (delta / nr_base * 100) if nr_base > 0 else 0
+        melhora = delta > 0
+        cor_seta = COR_VERDE if melhora else COR_VERMELHO
+        sinal    = "▼" if melhora else "▲"
+        cor_nr_b = COR_VERMELHO
+        cor_nr_a = COR_VERDE if melhora else COR_VERMELHO
+        perc_b_fmt = f"{perc_base:.0f}%" if perc_base is not None else "—"
+        perc_a_fmt = f"{perc_atual:.0f}%" if perc_atual is not None else "—"
+        c_html = (
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">'
+            f'<div style="flex:1;background:{COR_CARD};border-radius:8px;padding:8px;text-align:center;border:1px solid {COR_BORDA};">'
+            f'<div style="font-size:18px;font-weight:600;color:{cor_nr_b};">{nr_base:.1f}</div>'
+            f'<div style="font-size:10px;color:{COR_MUTED};">antes</div></div>'
+            f'<div style="font-size:20px;color:{cor_seta};font-weight:700;">→</div>'
+            f'<div style="flex:1;background:{COR_CARD};border-radius:8px;padding:8px;text-align:center;border:1px solid {COR_BORDA};">'
+            f'<div style="font-size:18px;font-weight:600;color:{cor_nr_a};">{nr_atual:.1f}</div>'
+            f'<div style="font-size:10px;color:{COR_MUTED};">agora</div></div></div>'
+            f'<div style="font-size:12px;color:{cor_seta};font-weight:600;">'
+            f'{sinal} {abs(delta_p):.0f}% {"melhora" if melhora else "piora"} no NR</div>'
+            f'<div style="font-size:11px;color:{COR_MUTED};margin-top:4px;">'
+            f'% risco alto: {perc_b_fmt} → {perc_a_fmt}</div>'
+        )
+        c_ativo = True
+    else:
+        data_base_fmt = datetime.fromtimestamp(mtime_base).strftime("%d/%m/%Y") if mtime_base > 0 else "—"
+        extra = (f'<br><span style="font-size:10px;margin-top:4px;display:block;">Baseline: {data_base_fmt}</span>'
+                 if mtime_base > 0 else "")
+        c_html = (
+            f'<div style="text-align:center;padding:12px 0;color:{COR_MUTED};font-size:12px;">'
+            f'<div style="font-size:22px;margin-bottom:6px;">⏳</div>'
+            f'Aguardando novo questionário.<br>'
+            f'<span style="font-size:11px;">O check será calculado automaticamente quando os dados forem atualizados.</span>'
+            f'{extra}</div>'
+        )
+        c_ativo = False
+
+    # ── A — Act ──────────────────────────────────────────────────────────────
+    a_ativo = dados_novos and nr_atual is not None
+    a_html  = (
+        f'<div style="font-size:12px;color:{COR_MUTED};">Escolha a próxima ação abaixo.</div>'
+        if a_ativo else
+        f'<div style="font-size:12px;color:{COR_MUTED};opacity:.5;">Disponível após o check ser concluído.</div>'
+    )
+
+    # ── Grid dos 4 quadrantes ─────────────────────────────────────────────────
+    st.markdown(
+        f'<div style="margin-top:20px;border-top:1px solid {COR_BORDA};padding-top:16px;">'
+        f'<div style="font-size:11px;font-weight:700;color:{COR_MUTED};text-transform:uppercase;'
+        f'letter-spacing:.1em;margin-bottom:10px;">🔄 Ciclo PDCA</div>'
+        f'<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;">'
+        + _quadrant("P — Plan",  "Plano gerado",
+                    p_html, ativo=False, concluido=True)
+        + _quadrant("D — Do",    "Em execução",
+                    d_html, ativo=(prog_pct < 100), concluido=(prog_pct == 100))
+        + _quadrant("C — Check",
+                    "Dados atualizados" if c_ativo else "Aguardando dados",
+                    c_html, ativo=c_ativo, concluido=False)
+        + _quadrant("A — Act",
+                    "Decisão do gestor" if a_ativo else "Aguardando check",
+                    a_html, ativo=a_ativo, concluido=False)
+        + '</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Botões Act renderizados via Streamlit (fora do HTML) ──────────────────
+    if a_ativo:
+        col_enc, col_adj, col_new = st.columns([1, 1, 1])
+        with col_enc:
+            if st.button("✅ Encerrar ciclo", key=f"act_enc_{prob_id}", use_container_width=True):
+                st.session_state.action_plans[saved_idx]["ciclo_encerrado"] = True
+                st.session_state.action_plans[saved_idx]["encerrado_em"]    = datetime.now().strftime("%d/%m/%Y %H:%M")
+                st.success("✅ Ciclo PDCA encerrado. Problema resolvido!")
+                st.rerun()
+        with col_adj:
+            if st.button("🔄 Ajustar plano", key=f"act_adj_{prob_id}", use_container_width=True):
+                with st.spinner("🧠 Gerando plano ajustado com base no check..."):
+                    try:
+                        nr_atual_inner   = _nr_atual_do_grupo(prob_id, tipo, grupo)
+                        perc_atual_inner = _perc_alto_atual_do_grupo(tipo, grupo)
+                        delta_txt = ""
+                        if nr_base is not None and nr_atual_inner is not None:
+                            dp = (nr_base - nr_atual_inner) / nr_base * 100 if nr_base > 0 else 0
+                            delta_txt = (
+                                f"CHECK PDCA: NR era {nr_base:.1f}, agora é {nr_atual_inner:.1f} "
+                                f"({'melhora' if dp > 0 else 'piora'} de {abs(dp):.0f}%). "
+                                f"% em risco alto: {perc_base:.0f}% -> {perc_atual_inner:.0f}%.\n"
+                            )
+                        concluidas = [a.get("descricao","") for a in acoes if a.get("status","") == "✅ Concluído"]
+                        pendentes  = [a.get("descricao","") for a in acoes if a.get("status","") != "✅ Concluído"]
+                        prompt_adj = (
+                            f"PROBLEMA ORIGINAL: {plan.get('problema','')}\n"
+                            f"GRUPO: {tipo} '{grupo}'\n"
+                            f"{delta_txt}"
+                            f"Acoes ja CONCLUIDAS: {', '.join(concluidas) or 'nenhuma'}\n"
+                            f"Acoes PENDENTES: {', '.join(pendentes) or 'nenhuma'}\n"
+                            f"Gere plano 5W2H AJUSTADO focado no que ainda precisa melhorar."
+                        )
+                        raw    = call_groq(SYSTEM_ADJUST, prompt_adj)
+                        result = parse_json_response(raw)
+                        if result.get("tipo") == "plano_acao" and result.get("acoes"):
+                            for a in result["acoes"]:
+                                a.setdefault("status", "⏳ Pendente")
+                            novo = {
+                                "plan": result,
+                                "metadata": {"problem_id": prob_id, "tipo": tipo, "grupo": grupo},
+                                "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                "nr_baseline":            nr_atual_inner,
+                                "perc_alto_baseline":     perc_atual_inner,
+                                "parquet_mtime_baseline": mtime_atual,
+                                "plano_anterior_idx":     saved_idx,
+                            }
+                            st.session_state.action_plans.append(novo)
+                            st.session_state.action_plans[saved_idx]["ciclo_encerrado"] = True
+                            st.success("✅ Plano ajustado gerado! Novo ciclo PDCA iniciado.")
+                            st.rerun()
+                        else:
+                            st.error("❌ Modelo não retornou plano válido.")
+                    except Exception as e:
+                        st.error(f"❌ Erro ao ajustar plano: {e}")
+        with col_new:
+            if st.button("↺ Novo ciclo", key=f"act_new_{prob_id}", use_container_width=True):
+                st.info("Aplique novo questionário. Os dados serão comparados automaticamente quando o arquivo for atualizado.")
 
 
 def _render_analysis_box(result):
@@ -2069,6 +2345,13 @@ with tabs[9]:
                     with col_new:
                         if st.button("🔄 Regerar plano", key=f"regen_{prob_id}", use_container_width=True):
                             st.session_state.action_plans.pop(saved_idx); st.rerun()
+
+                    # ── Card PDCA — renderizado abaixo dos controles do 5W2H ──────
+                    _render_pdca_card(
+                        saved     = st.session_state.action_plans[saved_idx],
+                        prob_id   = prob_id,
+                        saved_idx = saved_idx,
+                    )
                 else:
                     if st.button(f"🤖 Gerar Plano 5W2H para '{prob['grupo']}'",
                                  key=f"gen_{prob_id}", use_container_width=True, type="primary"):
@@ -2090,6 +2373,10 @@ with tabs[9]:
                                         "plan": result,
                                         "metadata": {"problem_id": prob_id, "tipo": prob["tipo"], "grupo": prob["grupo"]},
                                         "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                                        # ── PDCA baseline ──────────────────────────────────────────────
+                                        "nr_baseline":            prob["nr"],
+                                        "perc_alto_baseline":     prob["perc_alto"],
+                                        "parquet_mtime_baseline": _parquet_mtime(),
                                     })
                                     st.success(f"✅ Plano gerado para '{prob['grupo']}'!")
                                     st.rerun()
