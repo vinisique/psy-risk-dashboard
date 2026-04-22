@@ -104,8 +104,7 @@ def buscar_contexto_normativo(
             f"query: {pergunta}",
             normalize_embeddings=True,
         ).tolist()
-    except Exception as e:
-        st.warning(f"⚠️ Erro ao gerar embedding: {e}")
+    except Exception:
         return ""
 
     # Conexão aberta aqui, fechada no finally — nunca vaza
@@ -126,8 +125,7 @@ def buscar_contexto_normativo(
         rows = cur.fetchall()
         cur.close()
 
-    except Exception as e:
-        st.warning(f"⚠️ Erro na busca normativa: {e}")
+    except Exception:
         return ""
 
     finally:
