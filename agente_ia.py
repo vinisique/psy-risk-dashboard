@@ -1,5 +1,5 @@
 """
-dashboard_completo.py — Dashboard HSE-IT · Vivamente 360°
+dashboard_completo.py — Dashboard HSE-IT
 ══════════════════════════════════════════════════════════
 100% do app.py original (slides 13–23, 9 tabs) +
 Agente IA em TODOS os gráficos e tabelas +
@@ -1004,7 +1004,7 @@ with st.sidebar:
         <div style="text-align:center; padding:25px 0 15px 0; border-bottom:1px solid #2A2D3E;">
             <h2 style="margin:0; font-size:24px; color:#2D9E75;">🧠 HSE-IT</h2>
             <p style="margin:4px 0 0 0; font-size:13px; color:#8B8FA8;">
-                Plataforma Vivamente 360° • NR-1
+                Plataforma HSE - IT • NR-1
             </p>
         </div>
     """, unsafe_allow_html=True)
@@ -1168,7 +1168,7 @@ st.markdown(f"""
 <div class="page-header">
   <div>
     <h1>🧠 Dashboard HSE-IT · Riscos Psicossociais</h1>
-    <p>Plataforma Vivamente 360° — NR-1 · {n_total} respondentes no filtro atual</p>
+    <p>Plataforma HSE-IT — NR-1 · {n_total} respondentes no filtro atual</p>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -2507,7 +2507,7 @@ st.markdown(f"""
 <div style="margin-top:3rem;padding-top:1.5rem;border-top:1px solid {COR_BORDA};
      display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
   <span style="font-size:12px;color:{COR_MUTED};">
-    🧠 Dashboard HSE-IT · Plataforma Vivamente 360° · NR-1 · IA por Groq + Llama 3.3
+    🧠 Dashboard HSE-IT · Plataforma HSE-IT · NR-1 · IA por Groq + Llama 3.3
   </span>
   <span style="font-size:11px;color:{COR_MUTED};font-family:'DM Mono',monospace;">
     base.parquet · setor.parquet · cargo.parquet · unidade.parquet
